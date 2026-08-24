@@ -7,7 +7,9 @@ ERP that runs employee time, production and scheduling.
 
 Export a report from Concrete Vision, drop the file on the page, and read it.
 Parsing happens entirely in your browser — **no file is ever uploaded anywhere**,
-and nothing but code lives in this repository.
+and nothing but code lives in this repository. Your last import is cached in the
+browser's IndexedDB, so a refresh doesn't mean re-uploading; large exports
+(100k+ rows) are fine.
 
 ## Modules
 
@@ -44,7 +46,7 @@ Employee Time expects: `Effective Date`, `First Name`, `Last Name`, `Job Name`,
 ```bash
 npm install
 npm run dev       # http://localhost:5173
-npm test          # data-layer checks + render every view
+npm test          # data-layer, persistence and render checks
 npm run build     # production build into dist/
 npm run sample    # regenerate samples/employee-time.sample.csv
 npm run deploy    # test, build, publish to the gh-pages branch

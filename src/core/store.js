@@ -1,76 +1,159 @@
 /**
  * Per-module dataset persistence.
  *
- * Each module keeps its last import in localStorage under its own key, so
- * reloading the page (or coming back tomorrow) doesn't mean re-uploading.
- * Data never leaves the browser.
+ * Each module keeps its last import under its own key, so reloading the page
+ * (or coming back tomorrow) doesn't mean re-uploading. Data never leaves the
+ * browser.
+ *
+ * Storage is IndexedDB, with localStorage as a fallback only. localStorage was
+ * the original choice and was wrong: its ~5MB cap and string-only values mean a
+ * real export fails to save. IndexedDB has a disk-proportional quota and stores
+ * objects directly. Anything already saved under the old localStorage key is
+ * migrated across on first load and then removed.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { idbAvailable, idbGet, idbSet, idbDel, storageEstimate } from "./idb.js";
 
 const PREFIX = "cv.analysis";
 const VERSION = 1;
 
 export const storeKey = (moduleId) => `${PREFIX}.${moduleId}.v${VERSION}`;
 
-function read(moduleId) {
+const isDataset = (v) => Array.isArray(v?.rows);
+
+/* -- localStorage fallback --------------------------------------------- */
+
+function lsRead(key) {
   try {
-    const raw = localStorage.getItem(storeKey(moduleId));
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.rows)) return null;
-    return parsed;
+    return isDataset(parsed) ? parsed : null;
   } catch {
-    return null; // corrupt or unreadable — treat as "no saved data"
+    return null; // corrupt, or storage blocked — treat as "nothing saved"
   }
 }
 
-function write(moduleId, payload) {
+function lsWrite(key, payload) {
   try {
-    localStorage.setItem(storeKey(moduleId), JSON.stringify(payload));
-    return { ok: true };
-  } catch (err) {
-    // Quota is the realistic failure here: a very large export can exceed the
-    // ~5MB budget. The dataset stays usable in memory for this session.
-    return {
-      ok: false,
-      message:
-        "Data loaded, but it was too large to save for next visit — " +
-        "it will need re-uploading after a refresh.",
-    };
+    localStorage.setItem(key, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
   }
 }
+
+const lsRemove = (key) => { try { localStorage.removeItem(key); } catch { /* ignore */ } };
+
+/* -- Read / write ------------------------------------------------------- */
+
+async function readDataset(key) {
+  if (idbAvailable()) {
+    try {
+      const found = await idbGet(key);
+      if (isDataset(found)) return found;
+    } catch {
+      // fall through to the fallback below
+    }
+    // Nothing in IndexedDB yet — adopt anything the old localStorage-only
+    // version left behind, then stop paying its size cost.
+    const legacy = lsRead(key);
+    if (legacy) {
+      try { await idbSet(key, legacy); lsRemove(key); } catch { /* keep the copy */ }
+      return legacy;
+    }
+    return null;
+  }
+  return lsRead(key);
+}
+
+/** Resolves to { ok } or { ok: false, message } — never throws. */
+async function writeDataset(key, payload) {
+  if (idbAvailable()) {
+    try {
+      await idbSet(key, payload);
+      return { ok: true };
+    } catch (err) {
+      const est = await storageEstimate();
+      const room = est?.quota
+        ? ` The browser reports ${mb(est.usage)} used of ${mb(est.quota)} available.`
+        : "";
+      return {
+        ok: false,
+        message:
+          "Data loaded, but it could not be saved for next visit — this browser " +
+          `refused the write (${err?.name || "unknown error"}).${room} ` +
+          "The dashboard works normally; the file just needs re-uploading after a refresh.",
+      };
+    }
+  }
+
+  if (lsWrite(key, payload)) return { ok: true };
+  return {
+    ok: false,
+    message:
+      "Data loaded, but this browser has IndexedDB disabled and the dataset is " +
+      "too large for the ~5MB localStorage fallback. The dashboard works normally; " +
+      "the file just needs re-uploading after a refresh. Private/incognito windows " +
+      "are the usual cause.",
+  };
+}
+
+const mb = (bytes) =>
+  bytes == null ? "?" : `${(bytes / 1024 / 1024).toFixed(0)} MB`;
+
+/* -- Hook --------------------------------------------------------------- */
 
 /**
  * useDataset(moduleId) -> { rows, meta, ready, persistWarning, load, clear }
  *
- * `ready` is false until the first read from localStorage completes, so the
- * empty state doesn't flash before saved data appears.
+ * `ready` stays false until the first read resolves, so the empty state doesn't
+ * flash before saved data appears.
  */
 export function useDataset(moduleId) {
   const [state, setState] = useState({ rows: [], meta: null });
   const [ready, setReady] = useState(false);
   const [persistWarning, setPersistWarning] = useState("");
+  const key = storeKey(moduleId);
+
+  // Guards against a resolved read overwriting a newer import, and against
+  // setting state on an unmounted component.
+  const alive = useRef(true);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
-    const saved = read(moduleId);
-    if (saved) setState({ rows: saved.rows, meta: saved.meta ?? null });
-    setReady(true);
-  }, [moduleId]);
+    alive.current = true;
+    const seq = ++loadSeq.current;
+    readDataset(key)
+      .then((saved) => {
+        if (!alive.current || seq !== loadSeq.current) return;
+        if (saved) setState({ rows: saved.rows, meta: saved.meta ?? null });
+      })
+      .catch(() => { /* nothing saved is a normal state */ })
+      .finally(() => { if (alive.current) setReady(true); });
+    return () => { alive.current = false; };
+  }, [key]);
 
   const load = useCallback(
     (rows, meta) => {
+      // Show the data immediately; persistence catches up in the background.
+      loadSeq.current++;
       setState({ rows, meta });
-      const res = write(moduleId, { rows, meta });
-      setPersistWarning(res.ok ? "" : res.message);
+      setPersistWarning("");
+      writeDataset(key, { rows, meta }).then((res) => {
+        if (alive.current && !res.ok) setPersistWarning(res.message);
+      });
     },
-    [moduleId]
+    [key]
   );
 
   const clear = useCallback(() => {
-    try { localStorage.removeItem(storeKey(moduleId)); } catch { /* ignore */ }
+    loadSeq.current++;
     setState({ rows: [], meta: null });
     setPersistWarning("");
-  }, [moduleId]);
+    lsRemove(key);
+    if (idbAvailable()) idbDel(key).catch(() => { /* already gone */ });
+  }, [key]);
 
   return { ...state, ready, persistWarning, load, clear };
 }

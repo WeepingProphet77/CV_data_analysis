@@ -147,10 +147,23 @@ Concrete Vision export before building either module out.
 
 ### Persistence
 
-`useDataset(moduleId)` keeps the last import in `localStorage` under
-`cv.analysis.<moduleId>.v1`. Bump the version in `core/store.js` if the row
-shape changes incompatibly. A quota failure is non-fatal — the dataset stays
-usable for the session and the UI says it won't survive a refresh.
+`useDataset(moduleId)` keeps the last import in **IndexedDB** under
+`cv.analysis.<moduleId>.v1`, via the dependency-free wrapper in `core/idb.js`.
+
+**Do not move this back to `localStorage`.** That was the original choice and it
+was wrong: localStorage caps at ~5MB per origin and holds strings only, so every
+save costs a full `JSON.stringify` and a real export is simply refused. A
+120,000-row export is ~24MB as JSON — IndexedDB stores it in about 14ms
+(`npm run test:storage` proves this). localStorage survives only as a fallback
+for browsers with IndexedDB disabled, and anything found under the old key is
+migrated across on first read and then deleted.
+
+Bump `VERSION` in `core/store.js` if the row shape changes incompatibly.
+
+Writes are async and deliberately **not** awaited before the data renders — the
+dashboard shows the import immediately and surfaces a warning only if the save
+later fails. A failed save is never fatal: the session works normally, the file
+just needs re-uploading after a refresh.
 
 ---
 
@@ -205,8 +218,9 @@ scanline and bloom overlays — carried over from the original tool.
 ## 7. Testing
 
 ```bash
-npm test          # both suites; this is what CI gates the deploy on
-npm run test:data # core/ logic in plain node — fast, no build
+npm test             # all three suites; the deploy script gates on this
+npm run test:data    # core/ logic in plain node — fast, no build
+npm run test:storage # IndexedDB persistence, against fake-indexeddb
 npm run test:render  # server-renders every view against the sample data
 ```
 
@@ -215,6 +229,11 @@ newlines, CRLF, BOM), date and number coercion, column mapping including drifted
 headers, and the aggregation invariants that matter: **a rollup conserves the
 total**, **"Other" conserves the remainder**, **a cumulative series is
 monotonically non-decreasing and ends at the group total**.
+
+`test:storage` runs the real IndexedDB code path against `fake-indexeddb` and
+asserts that a dataset far larger than the localStorage cap saves and reloads
+intact. Keep the oversized case — it is the regression guard for the bug that
+motivated the switch.
 
 `test:render` mounts every view — plus empty, single-row and unknown-key
 datasets — and asserts the chart actually emitted geometry. It catches broken
@@ -298,7 +317,10 @@ Carry these forward; update as they're answered.
       live in a browser cache at all.
 - [ ] Loading two exports covering different date spans currently **replaces**
       the dataset. If merging spans is wanted, it needs a dedupe key (probably
-      date + person + job + task).
+      date + person + job + task). IndexedDB now has the headroom for it.
+- [ ] Very large datasets are held entirely in memory and re-aggregated on every
+      filter change. If that gets sluggish, the fix is indexing or a web worker,
+      not a smaller dataset — measure before optimizing.
 - [ ] Cross-module analysis (labor hours per unit produced; charged hours versus
       schedule) is the reason the modules share a core. It needs a story for
       joining datasets on job name.
