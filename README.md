@@ -47,11 +47,14 @@ npm run dev       # http://localhost:5173
 npm test          # data-layer checks + render every view
 npm run build     # production build into dist/
 npm run sample    # regenerate samples/employee-time.sample.csv
+npm run deploy    # test, build, publish to the gh-pages branch
 ```
 
 `samples/employee-time.sample.csv` is entirely synthetic — fabricated names and
 job numbers — so the dashboard can be demoed and tested without real company data.
 
-Pushing to `main` runs the tests and deploys to GitHub Pages automatically.
+Deploys currently go out with `npm run deploy`, which publishes the build to the
+`gh-pages` branch. Automatic deployment on push to `main` is ready to switch on —
+see the deployment section of [CLAUDE.md](CLAUDE.md).
 
 See [CLAUDE.md](CLAUDE.md) for architecture, conventions and how to add a module.

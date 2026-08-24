@@ -11,7 +11,8 @@
     "test": "npm run test:data && npm run test:render",
     "test:data": "node scripts/smoke-test.mjs",
     "test:render": "vite build --ssr scripts/render-test.jsx --outDir .render-test --logLevel warn && node .render-test/render-test.js",
-    "sample": "node scripts/make-sample.mjs > samples/employee-time.sample.csv"
+    "sample": "node scripts/make-sample.mjs > samples/employee-time.sample.csv",
+    "deploy": "bash scripts/deploy-pages.sh"
   },
   "dependencies": {
     "react": "^18.3.1",

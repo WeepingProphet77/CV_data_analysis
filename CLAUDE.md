@@ -231,17 +231,43 @@ harness on purpose — no test framework dependency.
 
 ## 8. Deployment
 
-GitHub Pages, via `.github/workflows/deploy.yml`, on every push to `main`:
-`npm ci` → `npm test` → `npm run build` → upload `dist/` → deploy. **A failing
-test blocks the deploy.**
+Live at **https://weepingprophet77.github.io/CV_data_analysis/**
 
-- Site: `https://weepingprophet77.github.io/CV_data_analysis/`
-- `vite.config.js` sets `base: '/CV_data_analysis/'` for production builds only.
-  **Renaming the repo means changing that string**, or every asset 404s.
-- Pages is configured with source = GitHub Actions. Don't switch it to
-  "deploy from a branch" — there is no committed build output.
+There are two deploy paths, and right now the fallback is the active one.
 
----
+**Active — manual, from the `gh-pages` branch:**
+
+```bash
+npm run deploy    # tests, builds, force-pushes dist/ to gh-pages
+```
+
+`scripts/deploy-pages.sh` refuses to run on a dirty working tree, runs `npm test`
+first, and publishes into a throwaway worktree. **The `gh-pages` branch holds
+build output only — never edit it, and never merge it into `main`.** It is
+force-pushed on every deploy.
+
+**Intended — GitHub Actions, on push to `main`:** the workflow is written and
+committed, but parked at `scripts/pages-deploy.workflow.yml` rather than
+`.github/workflows/deploy.yml`. GitHub rejects any push that adds a file under
+`.github/workflows/` unless the pushing token carries the `workflow` scope, and
+the local `gh` token does not. To finish the switch:
+
+```bash
+gh auth refresh -s workflow
+mkdir -p .github/workflows
+git mv scripts/pages-deploy.workflow.yml .github/workflows/deploy.yml
+git commit -m "Activate Pages deploy workflow" && git push
+```
+
+Then set Pages source to **GitHub Actions** (Settings → Pages, or
+`gh api -X PUT repos/WeepingProphet77/CV_data_analysis/pages -f build_type=workflow`),
+delete the `gh-pages` branch, and drop `scripts/deploy-pages.sh` plus the
+`deploy` script from `package.json`. Update this section when that happens.
+
+`vite.config.js` sets `base: '/CV_data_analysis/'` for production builds only.
+**Renaming the repo means changing that string**, or every asset 404s. A
+`.nojekyll` file is written into `dist/` so Pages' Jekyll pass doesn't drop
+`assets/`.
 
 ## 9. Conventions
 
