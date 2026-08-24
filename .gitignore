@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Never commit Concrete Vision exports -- they contain employee and job data.
+# Parsing happens entirely in the browser; nothing needs to live in the repo.
+*.csv
+*.xlsx
+*.xls
+!samples/*.sample.csv
+.render-test/

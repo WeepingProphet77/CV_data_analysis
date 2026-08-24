@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ENG Time Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0c1424; overflow-y: auto; }
+  #root { min-height: 100vh; }
+</style>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useCallback, useEffect } = React;
+// XLSX loaded globally from CDN
+
+
+
+function parseXlsx(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json(ws);
+  return raw.map(r => {
+    let d = r["Effective Date"];
+    if (typeof d === "number") {
+      const dt = new Date((d - 25569) * 86400000);
+      d = dt.toISOString().slice(0, 10);
+    } else if (d instanceof Date) {
+      d = d.toISOString().slice(0, 10);
+    } else {
+      d = String(d || "");
+    }
+    return {
+      date: d,
+      name: ((r["First Name"]||"").toString().trim() + " " + (r["Last Name"]||"").toString().trim()).trim(),
+      loc: (r["Location"]||"").toString(),
+      job: (r["Job Name"]||"").toString(),
+      gl: (r["GL Code"]||"").toString(),
+      task: (r["Labor Task"]||"").toString(),
+      dept: (r["Deptment"]||"").toString(),
+      hrs: parseFloat(r["Hours"]) || 0
+    };
+  });
+}
+
+function fmt(n) { return n.toLocaleString(undefined, {minimumFractionDigits:1, maximumFractionDigits:1}); }
+function pct(n, total) { return total > 0 ? (n/total*100).toFixed(1)+"%" : "0%"; }
+
+function Badge({children, color}) {
+  const colors = {
+    blue: {bg:"rgba(0,190,255,0.18)",fg:"#00d4ff",border:"rgba(0,200,255,0.4)"},
+    green: {bg:"rgba(0,255,150,0.15)",fg:"#00ff88",border:"rgba(0,255,150,0.4)"},
+    amber: {bg:"rgba(255,185,30,0.15)",fg:"#ffcc44",border:"rgba(255,185,30,0.35)"},
+    gray: {bg:"rgba(130,175,220,0.15)",fg:"#8ab4d0",border:"rgba(130,175,220,0.35)"},
+  };
+  const c = colors[color] || colors.gray;
+  return <span style={{display:"inline-block",padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:600,background:c.bg,color:c.fg,border:"1px solid "+c.border,marginRight:4,letterSpacing:"0.5px",textTransform:"uppercase"}}>{children}</span>;
+}
+
+function MiniBar({value, max, color="#00d4ff"}) {
+  const w = max > 0 ? Math.min(value/max*100, 100) : 0;
+  return <div style={{width:80,height:6,background:"rgba(100,170,230,0.12)",borderRadius:3,overflow:"hidden",display:"inline-block",verticalAlign:"middle",marginLeft:6,border:"1px solid rgba(100,170,230,0.18)"}}>
+    <div style={{width:w+"%",height:"100%",background:`linear-gradient(90deg, ${color}88, ${color})`,borderRadius:3,transition:"width 0.4s ease",boxShadow:`0 0 8px ${color}88, 0 0 3px ${color}44`}}/>
+  </div>;
+}
+
+function App() {
+  const [rows, setRows] = useState([]);
+  const [view, setView] = useState("overview");
+  const [detail, setDetail] = useState(null);
+  const [locFilter, setLocFilter] = useState("All");
+  const [deptFilter, setDeptFilter] = useState("All");
+  const [searchQ, setSearchQ] = useState("");
+  const [sortCol, setSortCol] = useState("hrs");
+  const [sortDir, setSortDir] = useState(-1);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileDate, setFileDate] = useState("");
+
+  const dateRange = useMemo(() => {
+    const all = rows.map(r => r.date).filter(Boolean).sort();
+    return { min: all[0] || "", max: all[all.length - 1] || "" };
+  }, [rows]);
+
+
+  // Load persisted data on mount
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("engTimeDashData");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setRows(parsed.rows || []);
+        setFileName(parsed.fileName || "");
+        setFileDate(parsed.fileDate || "");
+      }
+    } catch(e) { console.error("Failed to load saved data", e); }
+    setLoaded(true);
+  }, []);
+
+  const handleFile = useCallback((e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
+    setFileDate(new Date(file.lastModified).toISOString().slice(0, 10));
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, {type:"array"});
+        const parsed = parseXlsx(wb);
+        setRows(parsed);
+        try { localStorage.setItem("engTimeDashData", JSON.stringify({rows: parsed, fileName: file.name, fileDate: new Date(file.lastModified).toISOString().slice(0,10)})); } catch(e) { console.error("Save failed", e); }
+        setView("overview");
+        setDetail(null);
+        setLocFilter("All");
+        setDeptFilter("All");
+        setDateFrom("");
+        setDateTo("");
+        setSearchQ("");
+      } catch(err) { alert("Error parsing file: " + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
+  const filtered = useMemo(() => {
+    let f = rows;
+    if (locFilter !== "All") f = f.filter(r => r.loc === locFilter);
+    if (deptFilter !== "All") f = f.filter(r => r.dept === deptFilter);
+    const from = dateFrom || dateRange.min;
+    const to = dateTo || dateRange.max;
+    if (from) f = f.filter(r => r.date >= from);
+    if (to) f = f.filter(r => r.date <= to);
+    return f;
+  }, [rows, locFilter, deptFilter, dateFrom, dateTo, dateRange]);
+
+  const locs = useMemo(() => ["All", ...new Set(rows.map(r=>r.loc)).values()].sort(), [rows]);
+  const depts = useMemo(() => ["All", ...new Set(rows.map(r=>r.dept)).values()].sort(), [rows]);
+
+  const dates = useMemo(() => {
+    const s = new Set(filtered.map(r=>r.date));
+    const arr = [...s].sort();
+    return {min: arr[0]||"", max: arr[arr.length-1]||"", count: arr.length};
+  }, [filtered]);
+
+  const totalHrs = useMemo(() => filtered.reduce((s,r) => s + r.hrs, 0), [filtered]);
+
+  const peopleData = useMemo(() => {
+    const map = {};
+    filtered.forEach(r => {
+      if (!map[r.name]) map[r.name] = {name:r.name, hrs:0, loc:r.loc, jobs:new Set()};
+      map[r.name].hrs += r.hrs;
+      map[r.name].jobs.add(r.job);
+    });
+    let arr = Object.values(map).map(p => ({...p, jobCount: p.jobs.size}));
+    const q = searchQ.toLowerCase();
+    if (q) arr = arr.filter(p => p.name.toLowerCase().includes(q));
+    arr.sort((a,b) => sortDir * ((a[sortCol] > b[sortCol] ? 1 : a[sortCol] < b[sortCol] ? -1 : 0)));
+    return arr;
+  }, [filtered, searchQ, sortCol, sortDir]);
+
+  const projectData = useMemo(() => {
+    const map = {};
+    filtered.forEach(r => {
+      if (!map[r.job]) map[r.job] = {job:r.job, hrs:0, people:new Set()};
+      map[r.job].hrs += r.hrs;
+      map[r.job].people.add(r.name);
+    });
+    let arr = Object.values(map).map(p => ({...p, headcount: p.people.size}));
+    const q = searchQ.toLowerCase();
+    if (q) arr = arr.filter(p => p.job.toLowerCase().includes(q));
+    arr.sort((a,b) => sortDir * ((a[sortCol === "name" ? "job" : sortCol] > b[sortCol === "name" ? "job" : sortCol] ? 1 : a[sortCol === "name" ? "job" : sortCol] < b[sortCol === "name" ? "job" : sortCol] ? -1 : 0)));
+    return arr;
+  }, [filtered, searchQ, sortCol, sortDir]);
+
+  const maxPersonHrs = useMemo(() => Math.max(...peopleData.map(p=>p.hrs),1), [peopleData]);
+  const maxProjectHrs = useMemo(() => Math.max(...projectData.map(p=>p.hrs),1), [projectData]);
+
+  function personDetail(name) {
+    const mine = filtered.filter(r => r.name === name);
+    const total = mine.reduce((s,r) => s + r.hrs, 0);
+    const byJob = {};
+    mine.forEach(r => {
+      if (!byJob[r.job]) byJob[r.job] = {job:r.job, hrs:0, tasks:{}};
+      byJob[r.job].hrs += r.hrs;
+      byJob[r.job].tasks[r.task] = (byJob[r.job].tasks[r.task]||0) + r.hrs;
+    });
+    const jobs = Object.values(byJob).sort((a,b) => b.hrs - a.hrs);
+    const byWeek = {};
+    mine.forEach(r => {
+      const d = new Date(r.date + "T00:00:00");
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      const wk = monday.toISOString().slice(0,10);
+      byWeek[wk] = (byWeek[wk]||0) + r.hrs;
+    });
+    return {name, total, jobs, byWeek, loc: mine[0]?.loc||"", dept: mine[0]?.dept||""};
+  }
+
+  function projectDetail(job) {
+    const mine = filtered.filter(r => r.job === job);
+    const total = mine.reduce((s,r) => s + r.hrs, 0);
+    const byPerson = {};
+    mine.forEach(r => {
+      if (!byPerson[r.name]) byPerson[r.name] = {name:r.name, hrs:0, tasks:{}, loc:r.loc};
+      byPerson[r.name].hrs += r.hrs;
+      byPerson[r.name].tasks[r.task] = (byPerson[r.name].tasks[r.task]||0) + r.hrs;
+    });
+    const people = Object.values(byPerson).sort((a,b) => b.hrs - a.hrs);
+    const byTask = {};
+    mine.forEach(r => { byTask[r.task] = (byTask[r.task]||0) + r.hrs; });
+    const tasks = Object.entries(byTask).sort((a,b)=>b[1]-a[1]);
+    return {job, total, people, tasks};
+  }
+
+  const toggleSort = (col) => {
+    if (sortCol === col) setSortDir(d => -d);
+    else { setSortCol(col); setSortDir(-1); }
+  };
+  const sortIcon = (col) => sortCol === col ? (sortDir > 0 ? " \u25B2" : " \u25BC") : "";
+
+  const sty = {
+    page: {fontFamily:"'JetBrains Mono','SF Mono','Cascadia Code',monospace",maxWidth:1100,margin:"0 auto",padding:"20px 16px",color:"#e0ecf4",fontSize:13,background:"linear-gradient(170deg,#0e1830 0%,#122240 40%,#162844 100%)",minHeight:"100vh",position:"relative"},
+    header: {display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:20,borderBottom:"1px solid rgba(0,210,255,0.15)",paddingBottom:14},
+    title: {fontSize:22,fontWeight:800,letterSpacing:"1px",color:"#00f0ff",textShadow:"0 0 20px rgba(0,240,255,0.55), 0 0 40px rgba(0,240,255,0.25)",textTransform:"uppercase"},
+    cards: {display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:20},
+    card: {background:"rgba(16,35,65,0.7)",border:"1px solid rgba(0,220,255,0.18)",borderRadius:4,padding:"12px 14px",backdropFilter:"blur(8px)",position:"relative",overflow:"hidden"},
+    cardVal: {fontSize:24,fontWeight:800,color:"#00f0ff",textShadow:"0 0 14px rgba(0,240,255,0.7), 0 0 30px rgba(0,240,255,0.3)",letterSpacing:"0.5px"},
+    cardLabel: {fontSize:9,textTransform:"uppercase",letterSpacing:"2px",color:"#6a9ec0",marginTop:4,fontWeight:600},
+    filters: {display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14},
+    select: {padding:"5px 8px",borderRadius:3,border:"1px solid rgba(0,220,255,0.28)",fontSize:11,background:"rgba(14,28,52,0.9)",color:"#b8d6ee",fontFamily:"inherit",outline:"none",colorScheme:"dark"},
+    input: {padding:"5px 8px",borderRadius:3,border:"1px solid rgba(0,220,255,0.28)",fontSize:11,flex:"1 1 180px",minWidth:120,background:"rgba(14,28,52,0.9)",color:"#b8d6ee",fontFamily:"inherit",outline:"none",colorScheme:"dark"},
+    table: {width:"100%",borderCollapse:"collapse",fontSize:12},
+    th: {textAlign:"left",padding:"8px 8px",borderBottom:"1px solid rgba(0,220,255,0.28)",cursor:"pointer",userSelect:"none",fontWeight:700,fontSize:10,textTransform:"uppercase",letterSpacing:"1.5px",color:"#6aaed4",whiteSpace:"nowrap"},
+    td: {padding:"6px 8px",borderBottom:"1px solid rgba(40,80,120,0.35)"},
+    clickRow: {cursor:"pointer",transition:"all 0.2s ease"},
+    tab: {padding:"7px 16px",border:"1px solid transparent",borderRadius:"3px 3px 0 0",cursor:"pointer",fontWeight:600,fontSize:11,fontFamily:"inherit",letterSpacing:"1px",textTransform:"uppercase",transition:"all 0.2s"},
+    back: {cursor:"pointer",color:"#22ddff",fontWeight:600,fontSize:11,marginBottom:14,display:"inline-block",textTransform:"uppercase",letterSpacing:"1px",textShadow:"0 0 8px rgba(0,220,255,0.4)"},
+    uploadWrap: {display:"flex",alignItems:"center",gap:8},
+    uploadBtn: {padding:"6px 14px",background:"rgba(0,210,255,0.1)",color:"#22ddff",border:"1px solid rgba(0,220,255,0.4)",borderRadius:3,cursor:"pointer",fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",fontFamily:"inherit",transition:"all 0.2s"},
+  };
+
+  const renderOverview = () => (
+    <div>
+      <div style={sty.cards}>
+        <div style={sty.card}><div style={sty.cardVal}>{fmt(totalHrs)}</div><div style={sty.cardLabel}>Total Hours</div></div>
+        <div style={sty.card}><div style={sty.cardVal}>{peopleData.length}</div><div style={sty.cardLabel}>People</div></div>
+        <div style={sty.card}><div style={sty.cardVal}>{projectData.length}</div><div style={sty.cardLabel}>Projects</div></div>
+        <div style={sty.card}><div style={sty.cardVal}>{dates.count}</div><div style={sty.cardLabel}>Work Days</div></div>
+        <div style={sty.card}><div style={{...sty.cardVal,fontSize:14}}>{dates.min}</div><div style={sty.cardLabel}>From</div></div>
+        <div style={sty.card}><div style={{...sty.cardVal,fontSize:14}}>{dates.max}</div><div style={sty.cardLabel}>Through</div></div>
+      </div>
+    </div>
+  );
+
+  const renderPeople = () => (
+    <div style={{overflowX:"auto"}}>
+      <table style={sty.table}>
+        <thead><tr>
+          <th style={sty.th} onClick={()=>toggleSort("name")}>Name{sortIcon("name")}</th>
+          <th style={sty.th} onClick={()=>toggleSort("loc")}>Loc{sortIcon("loc")}</th>
+          <th style={sty.th} onClick={()=>toggleSort("hrs")}>Hours{sortIcon("hrs")}</th>
+          <th style={sty.th}>%</th>
+          <th style={sty.th} onClick={()=>toggleSort("jobCount")}>Jobs{sortIcon("jobCount")}</th>
+          <th style={sty.th}></th>
+        </tr></thead>
+        <tbody>{peopleData.map(p => (
+          <tr key={p.name} style={sty.clickRow} onClick={()=>{setDetail(personDetail(p.name));setView("personDetail");}}
+              onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,220,255,0.1)";e.currentTarget.style.boxShadow="inset 2px 0 0 #00d4ff";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.boxShadow="none";}}>
+            <td style={{...sty.td,fontWeight:600,color:"#22ddff",textShadow:"0 0 8px rgba(0,220,255,0.4)"}}>{p.name}</td>
+            <td style={sty.td}><Badge color="gray">{p.loc}</Badge></td>
+            <td style={sty.td}>{fmt(p.hrs)} <MiniBar value={p.hrs} max={maxPersonHrs}/></td>
+            <td style={sty.td}>{pct(p.hrs, totalHrs)}</td>
+            <td style={sty.td}>{p.jobCount}</td>
+            <td style={sty.td}><span style={{color:"rgba(0,220,255,0.4)"}}>\u25B6</span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+
+  const renderProjects = () => (
+    <div style={{overflowX:"auto"}}>
+      <table style={sty.table}>
+        <thead><tr>
+          <th style={sty.th} onClick={()=>toggleSort("name")}>Project{sortIcon("name")}</th>
+          <th style={sty.th} onClick={()=>toggleSort("hrs")}>Hours{sortIcon("hrs")}</th>
+          <th style={sty.th}>%</th>
+          <th style={sty.th} onClick={()=>toggleSort("headcount")}>People{sortIcon("headcount")}</th>
+          <th style={sty.th}></th>
+        </tr></thead>
+        <tbody>{projectData.map(p => (
+          <tr key={p.job} style={sty.clickRow} onClick={()=>{setDetail(projectDetail(p.job));setView("projectDetail");}}
+              onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,220,255,0.1)";e.currentTarget.style.boxShadow="inset 2px 0 0 #00d4ff";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.boxShadow="none";}}>
+            <td style={{...sty.td,fontWeight:500,color:"#22ddff",textShadow:"0 0 8px rgba(0,220,255,0.28)",maxWidth:400}}>{p.job}</td>
+            <td style={sty.td}>{fmt(p.hrs)} <MiniBar value={p.hrs} max={maxProjectHrs} color="#00ff88"/></td>
+            <td style={sty.td}>{pct(p.hrs, totalHrs)}</td>
+            <td style={sty.td}>{p.headcount}</td>
+            <td style={sty.td}><span style={{color:"rgba(0,220,255,0.4)"}}>\u25B6</span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+
+  const renderPersonDetail = () => {
+    if (!detail) return null;
+    const d = detail;
+    const maxJobHrs = Math.max(...d.jobs.map(j=>j.hrs),1);
+    return <div>
+      <span style={sty.back} onClick={()=>{setView("people");setDetail(null);}}>\u2190 Back to People</span>
+      <div style={{display:"flex",alignItems:"baseline",gap:12,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:18,fontWeight:800,color:"#f0f8ff",textShadow:"0 0 15px rgba(0,240,255,0.45)"}}>{d.name}</span>
+        <Badge color="blue">{d.loc}</Badge>
+        <Badge color="green">{d.dept}</Badge>
+        <span style={{fontSize:14,fontWeight:700,color:"#22ddff",textShadow:"0 0 10px rgba(0,210,255,0.4)"}}>{fmt(d.total)} hrs total</span>
+      </div>
+      <div style={{fontSize:12,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:1,color:"#6aaed4"}}>Projects Charged ({d.jobs.length})</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={sty.table}>
+          <thead><tr>
+            <th style={sty.th}>Project</th>
+            <th style={sty.th}>Hours</th>
+            <th style={sty.th}>% of Time</th>
+            <th style={sty.th}>Primary Tasks</th>
+          </tr></thead>
+          <tbody>{d.jobs.map(j => (
+            <tr key={j.job} style={sty.clickRow}
+                onClick={()=>{setDetail(projectDetail(j.job));setView("projectDetail");}}
+                onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,220,255,0.1)";e.currentTarget.style.boxShadow="inset 2px 0 0 #00d4ff";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.boxShadow="none";}}>
+              <td style={{...sty.td,fontWeight:500,color:"#22ddff",textShadow:"0 0 8px rgba(0,220,255,0.28)",maxWidth:350}}>{j.job}</td>
+              <td style={sty.td}>{fmt(j.hrs)} <MiniBar value={j.hrs} max={maxJobHrs}/></td>
+              <td style={sty.td}>{pct(j.hrs, d.total)}</td>
+              <td style={sty.td}>{Object.entries(j.tasks).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([t,h])=><Badge key={t} color="amber">{t.split(" - ")[0]} ({fmt(h)}h)</Badge>)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>;
+  };
+
+  const renderProjectDetail = () => {
+    if (!detail) return null;
+    const d = detail;
+    const maxPHrs = Math.max(...d.people.map(p=>p.hrs),1);
+    return <div>
+      <span style={sty.back} onClick={()=>{setView("projects");setDetail(null);}}>\u2190 Back to Projects</span>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:16,fontWeight:800,marginBottom:4,color:"#f0f8ff",textShadow:"0 0 15px rgba(0,240,255,0.45)"}}>{d.job}</div>
+        <span style={{fontSize:14,fontWeight:700,color:"#33ffaa",textShadow:"0 0 8px rgba(0,255,150,0.4)"}}>{fmt(d.total)} hrs total</span>
+        <span style={{marginLeft:12,color:"#88b8d6"}}>{d.people.length} people</span>
+      </div>
+      {d.tasks.length > 0 && <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#6aaed4",marginBottom:4}}>Hours by Task</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+          {d.tasks.map(([t,h])=><Badge key={t} color="amber">{t.split(" - ").pop()} {fmt(h)}h ({pct(h,d.total)})</Badge>)}
+        </div>
+      </div>}
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"#6aaed4",marginBottom:6}}>Team Members</div>
+      <div style={{overflowX:"auto"}}>
+        <table style={sty.table}>
+          <thead><tr>
+            <th style={sty.th}>Person</th>
+            <th style={sty.th}>Loc</th>
+            <th style={sty.th}>Hours</th>
+            <th style={sty.th}>% of Project</th>
+            <th style={sty.th}>Tasks</th>
+          </tr></thead>
+          <tbody>{d.people.map(p => (
+            <tr key={p.name} style={sty.clickRow}
+                onClick={()=>{setDetail(personDetail(p.name));setView("personDetail");}}
+                onMouseEnter={e=>{e.currentTarget.style.background="rgba(0,220,255,0.1)";e.currentTarget.style.boxShadow="inset 2px 0 0 #00d4ff";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.boxShadow="none";}}>
+              <td style={{...sty.td,fontWeight:600,color:"#22ddff",textShadow:"0 0 8px rgba(0,220,255,0.4)"}}>{p.name}</td>
+              <td style={sty.td}><Badge color="gray">{p.loc}</Badge></td>
+              <td style={sty.td}>{fmt(p.hrs)} <MiniBar value={p.hrs} max={maxPHrs} color="#00ff88"/></td>
+              <td style={sty.td}>{pct(p.hrs, d.total)}</td>
+              <td style={sty.td}>{Object.entries(p.tasks).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([t,h])=><Badge key={t} color="amber">{t.split(" - ")[0]} ({fmt(h)}h)</Badge>)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>;
+  };
+
+
+  // Empty state - prompt for upload
+  if (loaded && rows.length === 0) {
+    return <div style={sty.page}>
+      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,220,255,0.025) 2px,rgba(0,220,255,0.025) 4px)",pointerEvents:"none",zIndex:0}}/>
+      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,backgroundImage:"radial-gradient(ellipse at 30% 20%, rgba(0,130,255,0.1) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(120,40,255,0.07) 0%, transparent 60%)",pointerEvents:"none",zIndex:0}}/>
+      <div style={{position:"relative",zIndex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"80vh",textAlign:"center"}}>
+        <div style={{fontSize:28,fontWeight:800,color:"#00f0ff",textShadow:"0 0 20px rgba(0,240,255,0.6), 0 0 50px rgba(0,240,255,0.25)",textTransform:"uppercase",letterSpacing:"2px",marginBottom:8}}>ENG Time Dashboard</div>
+        <div style={{fontSize:13,color:"#6a9ec0",marginBottom:32,letterSpacing:"0.5px"}}>Upload an ERP time export to get started</div>
+        <label style={{padding:"12px 28px",background:"rgba(0,220,255,0.12)",color:"#22ddff",border:"1px solid rgba(0,220,255,0.4)",borderRadius:4,cursor:"pointer",fontSize:12,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",fontFamily:"inherit",transition:"all 0.2s",boxShadow:"0 0 15px rgba(0,240,255,0.15)"}}>
+          Upload .xlsx File
+          <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
+        </label>
+        <div style={{fontSize:10,color:"#4a7a9a",marginTop:16,maxWidth:300}}>Expects columns: Effective Date, First Name, Last Name, Location, Job Name, GL Code, Labor Task, Deptment, Hours</div>
+      </div>
+    </div>;
+  }
+
+  const tabs = [
+    {id:"overview",label:"Overview"},
+    {id:"people",label:"People ("+peopleData.length+")"},
+    {id:"projects",label:"Projects ("+projectData.length+")"},
+  ];
+
+  return <div style={sty.page}>
+    <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,backgroundImage:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,220,255,0.025) 2px,rgba(0,220,255,0.025) 4px)",pointerEvents:"none",zIndex:0}}/>
+    <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,backgroundImage:"radial-gradient(ellipse at 30% 20%, rgba(0,130,255,0.1) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(120,40,255,0.07) 0%, transparent 60%)",pointerEvents:"none",zIndex:0}}/>
+    <div style={{position:"relative",zIndex:1}}>
+    <style>{`
+      input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7) sepia(1) saturate(3) hue-rotate(160deg); }
+      select option { background: #122240; color: #a0c4e0; }
+      input::placeholder { color: #3a6a8a; }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: rgba(10,20,40,0.5); }
+      ::-webkit-scrollbar-thumb { background: rgba(0,220,255,0.35); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(0,220,255,0.5); }
+    `}</style>
+    <div style={sty.header}>
+      <div>
+        <div style={sty.title}>ENG Time Dashboard</div>
+        <div style={{fontSize:10,color:"#6a9ec0",letterSpacing:"0.5px"}}>{fileName} &mdash; modified {fileDate} &mdash; {rows.length.toLocaleString()} entries</div>
+      </div>
+      <div style={sty.uploadWrap}>
+        <label style={sty.uploadBtn}>
+          Upload New Data
+          <input type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
+        </label>
+        <button style={{...sty.uploadBtn,color:"#ff4466",borderColor:"rgba(255,68,102,0.3)"}} onClick={()=>{if(window.confirm("Clear all stored data?")){localStorage.removeItem("engTimeDashData");setRows([]);setFileName("");setFileDate("");}}}>Clear Data</button>
+      </div>
+    </div>
+
+    {(view==="overview"||view==="people"||view==="projects") && <>
+      <div style={{display:"flex",gap:4,marginBottom:14}}>
+        {tabs.map(t => (
+          <button key={t.id} style={{...sty.tab, background: view===t.id ? "rgba(0,220,255,0.18)" : "rgba(24,48,76,0.5)", color: view===t.id ? "#00f0ff" : "#4a7a9a", borderColor: view===t.id ? "rgba(0,220,255,0.4)" : "rgba(50,85,120,0.35)", boxShadow: view===t.id ? "0 0 10px rgba(0,240,255,0.25)" : "none"}}
+                  onClick={()=>{setView(t.id);setSearchQ("");setSortCol("hrs");setSortDir(-1);}}>{t.label}</button>
+        ))}
+      </div>
+      <div style={sty.filters}>
+        <span style={{fontSize:9,fontWeight:700,color:"#6aaed4",letterSpacing:"1.5px",textTransform:"uppercase"}}>From</span>
+        <input type="date" style={sty.select} value={dateFrom || dateRange.min} min={dateRange.min} max={dateRange.max} onChange={e=>setDateFrom(e.target.value)}/>
+        <span style={{fontSize:9,fontWeight:700,color:"#6aaed4",letterSpacing:"1.5px",textTransform:"uppercase"}}>To</span>
+        <input type="date" style={sty.select} value={dateTo || dateRange.max} min={dateRange.min} max={dateRange.max} onChange={e=>setDateTo(e.target.value)}/>
+        <select style={sty.select} value={locFilter} onChange={e=>setLocFilter(e.target.value)}>
+          {locs.map(l=><option key={l}>{l}</option>)}
+        </select>
+        <select style={sty.select} value={deptFilter} onChange={e=>setDeptFilter(e.target.value)}>
+          {depts.map(d=><option key={d}>{d}</option>)}
+        </select>
+        {(dateFrom || dateTo || locFilter !== "All" || deptFilter !== "All") && <button style={{...sty.select,cursor:"pointer",fontWeight:700,color:"#ff4466",borderColor:"rgba(255,68,102,0.3)",letterSpacing:"1px",textTransform:"uppercase"}} onClick={()=>{setDateFrom("");setDateTo("");setLocFilter("All");setDeptFilter("All");}}>Clear</button>}
+        {view !== "overview" && <input style={sty.input} placeholder="Search..." value={searchQ} onChange={e=>setSearchQ(e.target.value)}/>}
+      </div>
+    </>}
+
+    {view === "overview" && renderOverview()}
+    {view === "people" && renderPeople()}
+    {view === "projects" && renderProjects()}
+    {view === "personDetail" && renderPersonDetail()}
+    {view === "projectDetail" && renderProjectDetail()}
+  </div></div>;
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
