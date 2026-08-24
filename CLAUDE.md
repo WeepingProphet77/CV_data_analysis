@@ -48,7 +48,9 @@ src/
   App.jsx                      shell: module nav, hash route, error boundary
   styles/theme.css             ALL styling — design tokens + component classes
   core/                        framework-free logic, no JSX, node-importable
+    calendar.js                month-grid date math (weeksOf / monthsIn)
     csv.js                     RFC 4180 CSV reader (hand-rolled, dependency-free)
+    idb.js                     IndexedDB wrapper (dependency-free)
     parse.js                   schema-driven ingest: coercion, column mapping
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
     store.js                   useDataset — per-module localStorage persistence
@@ -61,20 +63,25 @@ src/
     DataBar.jsx                loaded-file strip: source, replace, clear
     Filters.jsx                FilterBar — date window + dimension selects
     ModulePlaceholder.jsx      stub UI for reserved-but-unbuilt modules
+    MonthCalendar.jsx          month grid; cells keyed by ISO date
     charts/
       LineChart.jsx            multi-series time lines, crosshair, table view
       BarChart.jsx             ranked horizontal bars
+      ColumnChart.jsx          vertical per-day columns
       scale.js                 niceTicks / sampleTicks / linear
   modules/
     registry.js                THE list of modules — nav and router read this
     employee-time/             built
-    production/                placeholder
+    production/                built
     schedule/                  placeholder
 scripts/
   make-sample.mjs              generates the synthetic sample CSV
   smoke-test.mjs               data-layer checks (pure, no DOM)
+  production-test.mjs          production schema + calendar checks
+  storage-test.mjs             IndexedDB persistence (fake-indexeddb)
+  make-production-sample.mjs   generates the synthetic production CSV
   render-test.jsx              server-renders every view against the sample
-samples/employee-time.sample.csv   synthetic, safe to commit
+samples/*.sample.csv               synthetic, safe to commit
 legacy/eng_time_dashboard.html     the original single-file tool; reference only
 ```
 
@@ -118,10 +125,10 @@ modules/<id>/
 5. Add render cases to `scripts/render-test.jsx`, including empty and
    single-row datasets.
 
-The two placeholders (`production`, `schedule`) render `<ModulePlaceholder>`,
-which states the intended scope and the export columns each is expected to
-consume. **Those column lists are guesses** — confirm them against a real
-Concrete Vision export before building either module out.
+`schedule` still renders `<ModulePlaceholder>`, which states its intended scope
+and the export columns it is expected to consume. **That column list is a
+guess** — confirm it against a real Concrete Vision export before building it
+out. `production` is being built from a real export; see §11.
 
 ---
 
@@ -218,11 +225,17 @@ scanline and bloom overlays — carried over from the original tool.
 ## 7. Testing
 
 ```bash
-npm test             # all three suites; the deploy script gates on this
-npm run test:data    # core/ logic in plain node — fast, no build
-npm run test:storage # IndexedDB persistence, against fake-indexeddb
-npm run test:render  # server-renders every view against the sample data
+npm test                # all four suites; the deploy script gates on this
+npm run test:data       # core/ logic in plain node — fast, no build
+npm run test:production # production schema, derivations, calendar grid
+npm run test:storage    # IndexedDB persistence, against fake-indexeddb
+npm run test:render     # server-renders every view against the sample data
 ```
+
+`test:production` also runs against the **real** `ScheduledProdRptDtl.xls` when
+that file happens to be sitting in the working directory. It is gitignored, so
+CI only ever sees the synthetic sample — but locally it is the check that
+matters most.
 
 `test:data` covers CSV edge cases (quoted commas, escaped quotes, embedded
 newlines, CRLF, BOM), date and number coercion, column mapping including drifted
@@ -310,8 +323,15 @@ delete the `gh-pages` branch, and drop `scripts/deploy-pages.sh` plus the
 
 Carry these forward; update as they're answered.
 
-- [ ] Confirm the real column names in Concrete Vision's **production** and
-      **schedule** exports. The lists in the placeholders are guesses.
+- [x] ~~Confirm the real column names in the **production** export~~ — done,
+      `ScheduledProdRptDtl.xls` profiled 2026-08-24; schema in §11.
+- [ ] Confirm the real column names in Concrete Vision's **schedule** export.
+      The list in that placeholder is still a guess.
+- [ ] What does the `(RL)` suffix on a piece mark mean, and what are the 51
+      zero-quantity rows that still carry a piece mark? Both are passed through
+      untouched until someone confirms.
+- [ ] `Cert` is empty in every row of the sample export. Confirm it is always
+      empty before relying on its absence.
 - [ ] Does the employee time export include a pay-rate or cost column? If so,
       cost rollups become possible — but decide first whether pay data should
       live in a browser cache at all.
@@ -327,3 +347,95 @@ Carry these forward; update as they're answered.
 - [ ] No CSV/PNG export from the dashboard yet.
 - [ ] Consider a per-person weekly-hours view (over/under 40) once real data
       confirms how overtime is represented.
+
+---
+
+## 11. Production module — plan
+
+Built from a real export: **`ScheduledProdRptDtl.xls`** ("Scheduled Production
+Report — Detail"), profiled 2026-08-24. It is **forward-looking**: a month of
+*scheduled* pours, not actuals. Language in the UI says "scheduled", never
+"produced".
+
+### The export
+
+Genuine legacy BIFF `.xls` (not HTML-in-disguise, which ERP exports often are),
+one sheet, 20 columns, 4,358 rows covering 2026-08-01 → 2026-08-31.
+
+| Column | Field | Notes |
+|---|---|---|
+| Plant | `plant` | 7 values |
+| Bed Date | `date` | the pour date; 26 dates, Mon–Sat, no Sundays |
+| Bed Name | `bed` | 131 beds; **plant-scoped** — no name is shared across plants, but key by plant+bed anyway |
+| Leadman | `leadman` | sparse (626/4358) |
+| Phase | `phase` | `"N - Name"`; blank on non-pour rows |
+| Mold | `mold` | sparse (210/4358) |
+| Piece Mark | `mark` | 1,617 distinct; some carry an `(RL)` suffix |
+| Qty | `qty` | **only 0, 1 or 2** — sum it for a piece count, never count rows |
+| Total SF / CY / LF | `sf` `cy` `lf` | square feet, cubic yards, linear feet |
+| Pos | `pos` | position on the bed |
+| Cert | — | **empty in every row**; not mapped |
+| Job Name | `job` | `"NNNNN - TITLE"` for 60 of 63 — parse defensively |
+| Bed Comment | `comment` | carries literal HTML (`<b>Bed Comment:</b> `) and an `N/A` sentinel; both stripped |
+| Prd Code | `prdCode` | |
+| Cross Section | `crossSection` | |
+| Cast No. / CTRL Num / Pour No. | `castNo` `ctrlNum` `pourNo` | identifiers, kept as strings |
+
+### Grain and the modeling decisions
+
+One row = **one scheduled piece on one bed on one date at one plant**.
+
+- **The bed-day is the calendar unit** — 1,765 of them. A bed-day is *not* a
+  single pour: 347 carry more than one `Pour No.` and 128 span more than one
+  job. Never assume bed+date is one pour or one job.
+- **832 rows have `qty = 0`**, and those rows carry zero SF, CY and LF without
+  exception. 781 have no piece mark and a comment like *"Bed Maintenance: Build
+  New Mold"* — these are **bed activity, not production**, and they are
+  **kept, not dropped**: an occupied bed is real schedule information. They are
+  flagged `isPour: false` and shown distinctly. The remaining 51 carry a mark
+  but zero everything; treated the same way pending an answer in §10.
+- `isEmptyRow` therefore drops a row only when it has no date, plant or bed —
+  **never on `qty === 0`.**
+- Up to 31 pieces land on a single bed-day, so a calendar cell must summarize
+  rather than list everything.
+
+### Views
+
+| Tab | What it shows |
+|---|---|
+| **Schedule** | The primary view. Month calendar, one cell per day, filtered to a plant. Cell shows the selected metric (pieces / SF / CY / LF) with a sequential heat wash and the busiest beds. Click a day → day detail: every bed, its pieces, and its comments. |
+| **Overview** | Stat tiles, daily scheduled volume as a column chart, cumulative volume through the month, top jobs and plant comparison as ranked bars. |
+| **Beds** | Utilization per bed: days scheduled, pieces, SF, CY, and idle days in the window. |
+| **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
+| **Pieces** | The searchable, sortable detail table. |
+
+Filters shared across tabs: date window, plant, job. The plant filter drives the
+calendar, so it is single-select there.
+
+### Shared components this adds
+
+- `components/MonthCalendar.jsx` — generic month grid taking
+  `{ date, value, label, detail }` cells. Lives in `components/`, not the
+  module, because the Schedule module will want the same grid.
+- `components/charts/ColumnChart.jsx` — vertical time bars for per-day
+  magnitude. Discrete days are columns; `LineChart` stays for accumulation.
+
+The calendar heat is a **sequential** encoding — one hue, low values near the
+surface, high values bright — not the categorical palette. Categorical slots
+still apply where series are compared (jobs, plants).
+
+### What building it turned up
+
+- **Derive, don't sync.** `Schedule` originally set its visible month in a
+  `useEffect`. Effects don't run on the first render, so the calendar received
+  `month === null` and threw — in the browser, not just under test. Month and
+  selected day are now **derived during render** from the data, which also keeps
+  them valid for free when a filter drops them out of range. Prefer derived
+  state to an effect that syncs one piece of state to another.
+- **`core/` must stay node-importable.** `monthsIn`/`weeksOf` were briefly
+  defined inside `MonthCalendar.jsx`, which made them unreachable from the test
+  scripts — plain node cannot import `.jsx`. They live in `core/calendar.js`
+  now. The layering rule in §2 exists for exactly this.
+- **A module renders `null` until its dataset resolves**, so `render-test.jsx`
+  marks module-level cases `allowEmpty` — the assertion there is "must not
+  throw", not "must produce output".

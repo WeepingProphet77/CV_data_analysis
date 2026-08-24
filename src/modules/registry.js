@@ -19,8 +19,8 @@ export const MODULES = [
   {
     id: "production",
     label: "Production",
-    blurb: "Cast output, yield and plan-versus-actual. Not built yet.",
-    status: "planned",
+    blurb: "Scheduled pours by plant — calendar, charts, beds, jobs and pieces.",
+    status: "ready",
     Component: ProductionModule,
   },
   {
