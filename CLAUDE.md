@@ -6,6 +6,52 @@ commit that changes the code.
 
 ---
 
+## 0. Start here
+
+**Read §1 (constraints), §2 (layout) and §7 (testing) before changing anything.**
+If the work touches the production module, read §11 too.
+
+### State as of 2026-08-24
+
+| | |
+|---|---|
+| Live site | https://weepingprophet77.github.io/CV_data_analysis/ |
+| Repo | github.com/WeepingProphet77/CV_data_analysis (public) |
+| Modules | **Employee Time** built · **Production** built · **Schedule** placeholder |
+| Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
+| Tests | four suites, all passing — `npm test` |
+
+### Running it
+
+```bash
+npm install
+npm run dev       # http://localhost:5173
+npm test          # gate every change on this
+npm run deploy    # test, build, publish to gh-pages
+```
+
+On the owner's machine there is **no Homebrew and no system Node** — Node 24 LTS
+lives in `~/.local/opt/node`, symlinked into `~/.local/bin`. A non-interactive
+shell may not pick that up, so prefix commands with
+`export PATH="$HOME/.local/bin:$PATH"` if `npm` is not found.
+
+### Things that will bite you
+
+- **Never commit company data.** Exports (`*.xls`/`*.xlsx`/`*.csv`) and UI
+  screenshots (`*.png`/`*.jpg`) are gitignored. The real
+  `ScheduledProdRptDtl.xls` sits in the working directory and must stay there.
+  Check `git status` before every commit.
+- **You cannot see the UI.** There is no browser automation here. Say so rather
+  than implying a change was visually checked (§7).
+- **Deploys are manual and the check must match the new bundle hash** — polling
+  for "any bundle" reports success against the *old* one. Compare against
+  `ls dist/assets/`.
+- **Don't drop unmapped export columns** — they are carried as `row.extra` and
+  shown in detail views (§4).
+- **Eight categorical colors, never a ninth** (§5).
+
+---
+
 ## 1. What this project is
 
 A static, browser-only analysis front end for data exported from **Concrete
@@ -53,8 +99,8 @@ src/
     idb.js                     IndexedDB wrapper (dependency-free)
     parse.js                   schema-driven ingest: coercion, column mapping
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
-    store.js                   useDataset — per-module localStorage persistence
-    palette.js                 the 8 validated categorical series colors
+    store.js                   useDataset — per-module IndexedDB persistence
+    palette.js                 the 8 validated categorical series colors + colorMapFor
     format.js                  fmt / pct / compact / date helpers
     hooks.js                   useSize (ResizeObserver)
   components/                  shared, module-agnostic UI
@@ -71,16 +117,20 @@ src/
       scale.js                 niceTicks / sampleTicks / linear
   modules/
     registry.js                THE list of modules — nav and router read this
-    employee-time/             built
-    production/                built
+    employee-time/             built  — timesheet analysis
+    production/                built  — scheduled pours (see §11)
+      board.js                 planning-board column math (plain ESM)
+      metrics.js               the pieces/SF/CY/LF measure list
     schedule/                  placeholder
 scripts/
-  make-sample.mjs              generates the synthetic sample CSV
-  smoke-test.mjs               data-layer checks (pure, no DOM)
-  production-test.mjs          production schema + calendar checks
-  storage-test.mjs             IndexedDB persistence (fake-indexeddb)
+  make-sample.mjs              generates the synthetic employee-time CSV
   make-production-sample.mjs   generates the synthetic production CSV
-  render-test.jsx              server-renders every view against the sample
+  smoke-test.mjs               employee-time + core data-layer checks
+  production-test.mjs          production schema, board columns, calendar grid
+  storage-test.mjs             IndexedDB persistence (fake-indexeddb)
+  render-test.jsx              server-renders every view against the samples
+  deploy-pages.sh              manual gh-pages deploy (see §8)
+  pages-deploy.workflow.yml    the Actions workflow, parked until scope (see §8)
 samples/*.sample.csv               synthetic, safe to commit
 legacy/eng_time_dashboard.html     the original single-file tool; reference only
 ```
@@ -108,6 +158,10 @@ modules/<id>/
   schema.js          field definitions the parser maps the export onto
   use<X>Filters.js   filter state and the derived filtered rows
   views/*.jsx        one file per tab or drill-down screen
+  *.js               any pure helper the views share (production has board.js
+                     for column math and metrics.js for its measure list).
+                     Keep these as plain ESM — the test scripts import them
+                     directly in node, which cannot load .jsx.
 ```
 
 ### Adding a module
@@ -258,12 +312,20 @@ motivated the switch.
 datasets — and asserts the chart actually emitted geometry. It catches broken
 imports and crashes, **not** visual regressions.
 
-**Neither suite looks at the page.** There is no browser automation here. When a
-change affects layout, spacing, color or interaction, say plainly that it was
-not visually verified, and ask the user to look at `npm run dev`.
+**No suite looks at the page.** There is no browser automation in this
+environment — the Claude-in-Chrome extension is not set up, so nothing here can
+screenshot or click the UI. When a change affects layout, spacing, color or
+interaction, **say plainly that it was not visually verified** and ask the user
+to look at `npm run dev`. Do not imply otherwise.
 
-When adding logic to `core/`, add a case to `smoke-test.mjs`. It is a hand-rolled
-harness on purpose — no test framework dependency.
+The render suite has still caught real browser bugs — it found `Schedule`
+passing `month === null` to the calendar on first render, which threw in Chrome
+too. Treat a render failure as a real defect until proven otherwise.
+
+Where new tests go: `core/` logic → `smoke-test.mjs`; production schema, board
+or calendar logic → `production-test.mjs`; a new view → a case in
+`render-test.jsx`, including its empty and single-row states. The harnesses are
+hand-rolled on purpose — no test framework dependency.
 
 ---
 
@@ -343,8 +405,9 @@ Carry these forward; update as they're answered.
       read-only echo.
 - [ ] CV shows Est/Act pairs and a Total Emp row. Find out whether an export
       exists that carries actuals and labor estimates per bed-day.
-- [ ] `Cert` is empty in every row of the sample export. Confirm it is always
-      empty before relying on its absence.
+- [ ] `Cert` is empty in every row of the export seen so far. It is mapped as a
+      real field regardless, so values will appear if it ever carries any —
+      nothing to do unless someone wants it surfaced more prominently.
 - [ ] Does the employee time export include a pay-rate or cost column? If so,
       cost rollups become possible — but decide first whether pay data should
       live in a browser cache at all.
@@ -412,19 +475,20 @@ One row = **one scheduled piece on one bed on one date at one plant**.
 - Up to 31 pieces land on a single bed-day, so a calendar cell must summarize
   rather than list everything.
 
-### Views
+### Views (`modules/production/views/`)
 
-| Tab | What it shows |
-|---|---|
-| **Board** | The primary view — a bed × day planning grid modeled on Concrete Vision's own Production Planning screen (`fpProdPlanningView.cfm`). Beds down the side, every calendar day across the top, cells holding `<job no> <piece mark>` cards. Per-day totals across the top (pours, pieces, CY, SF); per-week totals interleaved after each Sunday, and per-bed week totals in the same columns. Clicking a card opens every field the export carries for that piece. |
-| **Calendar** | Month view. Month calendar, one cell per day, filtered to a plant. Cell shows the selected metric (pieces / SF / CY / LF) with a sequential heat wash and the busiest beds. Click a day → day detail: every bed, its pieces, and its comments. |
-| **Overview** | Stat tiles, daily scheduled volume as a column chart, cumulative volume through the month, top jobs and plant comparison as ranked bars. |
-| **Beds** | Utilization per bed: days scheduled, pieces, SF, CY, and idle days in the window. |
-| **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
-| **Pieces** | The searchable, sortable detail table. |
+| File | Tab | What it shows |
+|---|---|---|
+| `PlanningBoard.jsx` + `PieceDetail.jsx` | **Board** | The primary view — a bed × day planning grid modeled on Concrete Vision's own Production Planning screen (`fpProdPlanningView.cfm`). Beds down the side, every calendar day across the top, cells holding `<job no> <piece mark>` cards. Per-day totals across the top (pours, pieces, CY, SF); per-week totals interleaved after each Sunday, and per-bed week totals in the same columns. Clicking a card opens every field the export carries for that piece. |
+| `Schedule.jsx` + `DayDetail.jsx` | **Calendar** | Month calendar, one cell per day, filtered to a plant. Cell shows the selected metric (pieces / SF / CY / LF) with a sequential heat wash and the busiest beds. Click a day → day detail: every bed, its pieces, and its comments. |
+| `Overview.jsx` | **Charts** | Stat tiles, daily scheduled volume as a column chart, cumulative volume through the month, top jobs and plant comparison as ranked bars. |
+| `Beds.jsx` | **Beds** | Utilization per bed: days scheduled, pieces, SF, CY, and idle days in the window. |
+| `Jobs.jsx` | **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
+| `Pieces.jsx` | **Pieces** | The searchable, sortable detail table, capped at 300 rows a page. |
 
-Filters shared across tabs: date window, plant, job. The plant filter drives the
-calendar, so it is single-select there.
+Filters shared across tabs: date window, plant, job. **Board and Calendar own
+their own plant picker** (it drives what they render), so the shared filter row
+omits plant on those two tabs rather than showing two controls for one thing.
 
 ### Shared components this adds
 
@@ -510,3 +574,52 @@ There is a "show fields that are empty" toggle for a compact read, defaulting to
 
 Apply the same rule to any future detail view: show the whole record, mark
 empties, never silently omit a field.
+
+---
+
+## 12. Employee Time module
+
+The first module, and the one the legacy single-file dashboard
+(`legacy/eng_time_dashboard.html`) was rewritten from.
+
+**Caveat a new agent should know:** unlike production, this schema was derived
+from the legacy tool's parser, **not** profiled against a real export. The
+column names are believed right and the aliases absorb drift, but nobody has
+verified them against a live file the way `ScheduledProdRptDtl.xls` was. Treat
+`schema.js` here as informed guesswork until an export confirms it.
+
+### The export
+
+`Effective Date`, `First Name`, `Last Name`, `Job Name`, `Hours` (required);
+`Location`, `GL Code`, `Labor Task`, `Deptment` (optional).
+
+**`Deptment` is Concrete Vision's own misspelling** and is the canonical label in
+the schema, with correct spellings as aliases. Do not "fix" it.
+
+Derived: `name` (first + last), which is what every view groups people by.
+`isEmptyRow` drops a row with no date, no name, or zero hours — unlike
+production, a zero here carries no information.
+
+### Views (`modules/employee-time/views/`)
+
+| File | Tab | What it shows |
+|---|---|---|
+| `Overview.jsx` | Overview | Stat tiles, cumulative burn for the whole selection, top projects ranked. |
+| `People.jsx` | People | Sortable, searchable roster — hours, share of total, project count, days charged. |
+| `Projects.jsx` | Projects | Same for jobs — hours, headcount, first/last charge. |
+| `Cumulative.jsx` | Cumulative | The plotting view. Narrow to a person and/or project, then split into series by project, person, labor task, location, department or GL code; cumulative or per-day. |
+| `PersonDetail.jsx` | drill-down | One person: cumulative hours per project, plus their project table. |
+| `ProjectDetail.jsx` | drill-down | One job: total burn, cumulative by person, hours by task, team table. |
+
+`useTimeFilters.js` holds the shared date-window / location / department filter
+state, mirroring `useProductionFilters.js`.
+
+### Decisions worth keeping
+
+- **The Cumulative view is a small pivot, not six hard-coded charts.** Adding a
+  new way to slice hours means adding one entry to its `SPLITS` array.
+- Series are capped at the eight validated palette slots via `topNWithOther`;
+  the ninth and beyond fold into a grey "Other" with a note saying so (§5).
+- `cumulativeSeries` takes a shared date `domain` so every series spans the same
+  x range and carries flat across idle days — without it, lines jump
+  horizontally past each other and read as though work stopped.
