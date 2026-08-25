@@ -10,3 +10,13 @@ dist/
 *.xls
 !samples/*.sample.csv
 .render-test/
+
+# Screenshots of the live Concrete Vision UI: they contain real job names,
+# plants and schedule data. Reference material only -- never committed.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.pdf
+Screenshot*
