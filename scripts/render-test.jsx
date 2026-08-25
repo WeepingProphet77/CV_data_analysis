@@ -23,6 +23,8 @@ import ProjectDetail from "../src/modules/employee-time/views/ProjectDetail.jsx"
 import ProductionModule from "../src/modules/production/index.jsx";
 import prodSchema from "../src/modules/production/schema.js";
 import ProdSchedule from "../src/modules/production/views/Schedule.jsx";
+import PlanningBoard from "../src/modules/production/views/PlanningBoard.jsx";
+import PieceDetail from "../src/modules/production/views/PieceDetail.jsx";
 import ProdOverview from "../src/modules/production/views/Overview.jsx";
 import ProdBeds from "../src/modules/production/views/Beds.jsx";
 import ProdJobs from "../src/modules/production/views/Jobs.jsx";
@@ -75,6 +77,11 @@ const cases = [
   ["PersonDetail", <PersonDetail name={person} rows={rows} onBack={noop} onOpenProject={noop} />],
   ["ProjectDetail", <ProjectDetail job={job} rows={rows} onBack={noop} onOpenPerson={noop} />],
   ["Production module", <ProductionModule />, { allowEmpty: true }],
+  ["Prod / Board", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
+  ["Prod / Board (1 plant)", <PlanningBoard rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
+  ["Prod / Board no rows", <PlanningBoard rows={[]} plant="All" plants={["All"]} onPlant={noop} />],
+  ["Prod / PieceDetail", <PieceDetail piece={prodRows.find((r) => r.isPour)} siblings={prodRows.slice(0, 4)} onClose={noop} onSelect={noop} />],
+  ["Prod / PieceDetail bed activity", <PieceDetail piece={prodRows.find((r) => !r.isPour)} siblings={[]} onClose={noop} onSelect={noop} />],
   ["Prod / Schedule", <ProdSchedule rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
   ["Prod / Schedule (1 plant)", <ProdSchedule rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
   ["Prod / Charts", <ProdOverview rows={prodRows} onOpenJob={noop} />],
@@ -137,6 +144,17 @@ if (prodPaths < 10) {
   console.log(`FAIL   production charts drew geometry (paths=${prodPaths})`);
 } else {
   console.log(`  ok   production charts drew geometry  ${prodPaths} paths`);
+}
+
+// The board must emit a real grid: one row per bed, cards that are buttons.
+const boardHtml = renderToString(<PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />);
+const cards = (boardHtml.match(/class="pcard"/g) || []).length;
+const wkCols = (boardHtml.match(/class="wk"/g) || []).length;
+if (cards < 100 || wkCols === 0) {
+  failures++;
+  console.log(`FAIL   board rendered cards + week totals (cards=${cards}, wk cells=${wkCols})`);
+} else {
+  console.log(`  ok   board rendered its grid          ${cards} piece cards, ${wkCols} week-total cells`);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll views rendered.\n`);

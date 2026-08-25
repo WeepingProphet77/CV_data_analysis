@@ -27,3 +27,16 @@ export const MAX_SERIES = SERIES.length;
 export function seriesColor(i) {
   return i < SERIES.length ? SERIES[i] : OTHER_COLOR;
 }
+
+/**
+ * Stable key -> color map for a ranked list of keys.
+ *
+ * Rank order comes from the caller (usually a rollup by volume), so a series
+ * keeps its color as long as its rank holds. Keys past the eight validated
+ * slots share the "Other" gray rather than getting an invented hue.
+ */
+export function colorMapFor(rankedKeys) {
+  const map = new Map();
+  rankedKeys.forEach((k, i) => map.set(k, seriesColor(i)));
+  return map;
+}

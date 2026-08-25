@@ -35,7 +35,14 @@ Filters (date window, location, department) apply across every view.
 Reads the **Scheduled Production Report (Detail)** export. It is forward-looking —
 these are pours that are *scheduled*, so the UI never claims anything was produced.
 
-- **Schedule** — the main view. Month calendar for one plant (or all), each day
+- **Board** — the main view. A bed × day planning grid: beds down the side, every
+  day across the top, cells holding `<job no> <piece mark>` cards colored by job,
+  phase or product code. Per-day totals (pours, pieces, CY, SF) run across the top
+  and per-week totals sit between the weeks. Click any piece to see every field
+  the export carries for it. Modeled on Concrete Vision's own planning view —
+  though the export has no shop-status fields, so cards can't reproduce CV's
+  status colors.
+- **Calendar** — month view. Month calendar for one plant (or all), each day
   shaded by pieces, square feet, cubic yards or linear feet, listing the busiest
   beds. Click a day for the bed-by-bed breakdown: every piece, its job, phase,
   position and pour number, plus bed comments.

@@ -13,6 +13,7 @@ import { DataBar } from "../../components/DataBar.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
 import schema from "./schema.js";
 import { useProductionFilters } from "./useProductionFilters.js";
+import PlanningBoard from "./views/PlanningBoard.jsx";
 import Schedule from "./views/Schedule.jsx";
 import Overview from "./views/Overview.jsx";
 import Beds from "./views/Beds.jsx";
@@ -22,7 +23,7 @@ import Pieces from "./views/Pieces.jsx";
 export default function ProductionModule() {
   const data = useDataset("production");
   const f = useProductionFilters(data.rows);
-  const [tab, setTab] = useState("schedule");
+  const [tab, setTab] = useState("board");
   const [search, setSearch] = useState("");
 
   const counts = useMemo(() => ({
@@ -58,7 +59,7 @@ export default function ProductionModule() {
         persistWarning={data.persistWarning}
         onLoaded={(rows, meta) => {
           data.load(rows, meta);
-          setTab("schedule"); setSearch(""); f.clear();
+          setTab("board"); setSearch(""); f.clear();
         }}
         onClear={data.clear}
       />
@@ -67,7 +68,8 @@ export default function ProductionModule() {
         active={tab}
         onChange={(t) => { setTab(t); setSearch(""); }}
         tabs={[
-          { id: "schedule", label: "Schedule" },
+          { id: "board", label: "Board" },
+          { id: "schedule", label: "Calendar" },
           { id: "overview", label: "Charts" },
           { id: "beds", label: `Beds (${counts.beds})` },
           { id: "jobs", label: `Jobs (${counts.jobs})` },
@@ -80,7 +82,7 @@ export default function ProductionModule() {
         dateFrom={f.dateFrom} dateTo={f.dateTo}
         onFrom={f.setDateFrom} onTo={f.setDateTo}
         dimensions={[
-          ...(tab === "schedule" ? [] : [{ id: "plant", label: "Plants", value: f.plant, options: f.plants, onChange: f.setPlant }]),
+          ...(tab === "schedule" || tab === "board" ? [] : [{ id: "plant", label: "Plants", value: f.plant, options: f.plants, onChange: f.setPlant }]),
           { id: "job", label: "Jobs", value: f.job, options: f.jobs, onChange: f.setJob },
         ]}
         dirty={f.dirty}
@@ -92,12 +94,15 @@ export default function ProductionModule() {
         }
       />
 
+      {tab === "board" && (
+        <PlanningBoard rows={f.filtered} plant={f.plant} plants={f.plants} onPlant={f.setPlant} />
+      )}
       {tab === "schedule" && (
         <Schedule rows={f.filtered} plant={f.plant} plants={f.plants} onPlant={f.setPlant} />
       )}
       {tab === "overview" && <Overview rows={f.filtered} onOpenJob={(job) => { f.setJob(job); setTab("jobs"); }} />}
       {tab === "beds" && <Beds rows={f.filtered} search={search} />}
-      {tab === "jobs" && <Jobs rows={f.filtered} search={search} onOpenJob={(job) => { f.setJob(job); setTab("schedule"); }} />}
+      {tab === "jobs" && <Jobs rows={f.filtered} search={search} onOpenJob={(job) => { f.setJob(job); setTab("board"); }} />}
       {tab === "pieces" && <Pieces rows={f.filtered} search={search} />}
     </div>
   );

@@ -13,6 +13,7 @@ import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/production/schema.js";
 import { groupBy, sumBy, distinct, rollup } from "../src/core/aggregate.js";
 import { monthsIn, weeksOf } from "../src/core/calendar.js";
+import { buildColumns, daySpan } from "../src/modules/production/board.js";
 
 let failures = 0;
 const eq = (name, got, want) => {
@@ -83,6 +84,26 @@ ok("covers every day of the month",
 eq("a clean month needs no padding", weeksOf("2026-02").length, 4);
 // A month whose 1st is a Saturday is the worst case for padding.
 ok("padded month still rectangular", weeksOf("2026-08").flat().length % 7 === 0);
+
+console.log("\nBoard columns");
+const span = daySpan("2026-08-24", "2026-08-30");
+eq("span is contiguous and inclusive", span,
+   ["2026-08-24","2026-08-25","2026-08-26","2026-08-27","2026-08-28","2026-08-29","2026-08-30"]);
+ok("span includes Sundays absent from the data", span.includes("2026-08-30"));
+const cols = buildColumns(span);
+eq("one column per day plus a week total", cols.filter((c) => c.type === "day").length, 7);
+eq("week total closes the Mon-Sun week", cols[cols.length - 1].type, "week");
+eq("week total covers all 7 days", cols[cols.length - 1].days.length, 7);
+// A range ending mid-week must still close out its trailing partial week.
+const partial = buildColumns(daySpan("2026-08-24", "2026-08-27"));
+eq("partial trailing week still totalled", partial[partial.length - 1].type, "week");
+eq("partial week covers only its days", partial[partial.length - 1].days.length, 4);
+// Two full weeks -> two week-total columns, no day counted twice.
+const two = buildColumns(daySpan("2026-08-24", "2026-09-06"));
+const weekCols = two.filter((c) => c.type === "week");
+eq("two weeks produce two totals", weekCols.length, 2);
+eq("no day appears in two week totals",
+   new Set(weekCols.flatMap((c) => c.days)).size, weekCols.reduce((a, c) => a + c.days.length, 0));
 
 console.log("\nAggregation invariants");
 const total = sumBy(s.rows, (r) => r.qty);
