@@ -1,23 +1,47 @@
 /**
  * Everything the export carries about one scheduled piece.
  *
- * Opened by clicking a piece card on the planning board. Escape closes it, and
- * focus moves to the panel so a keyboard user isn't stranded behind the grid.
+ * Deliberately exhaustive: every schema field is listed whether or not it has a
+ * value, so "blank" is visibly different from "not in this report". Columns the
+ * module's schema doesn't name are carried through the parser as `row.extra`
+ * and listed too, so a column Concrete Vision adds later shows up here without
+ * any code change.
+ *
+ * Opened by clicking a piece card on the planning board. Escape closes it.
  */
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "../../../components/ui.jsx";
 import { fmt, count, isoToDate } from "../../../core/format.js";
 
-const Row = ({ label, children }) =>
-  children === "" || children == null ? null : (
+/** One definition row. `raw` shows the source text when it differs from the
+ *  cleaned-up value, so nothing is hidden behind a derivation. */
+function Row({ label, value, raw }) {
+  const empty = value === "" || value == null;
+  return (
     <>
       <dt>{label}</dt>
-      <dd>{children}</dd>
+      <dd style={empty ? { color: "var(--text-muted)" } : undefined}>
+        {empty ? "—" : value}
+        {raw && raw !== String(value) && (
+          <span style={{ color: "var(--text-muted)", fontSize: 10.5, display: "block" }}>
+            source: {raw}
+          </span>
+        )}
+      </dd>
     </>
   );
+}
 
-export default function PieceDetail({ piece, siblings = [], onClose, onSelect }) {
+const Section = ({ title, children }) => (
+  <>
+    <div className="section-label" style={{ marginTop: 16 }}>{title}</div>
+    <dl>{children}</dl>
+  </>
+);
+
+export default function PieceDetail({ piece, siblings = [], related = [], onClose, onSelect }) {
   const ref = useRef(null);
+  const [showEmpty, setShowEmpty] = useState(true);
 
   useEffect(() => {
     ref.current?.focus();
@@ -26,12 +50,28 @@ export default function PieceDetail({ piece, siblings = [], onClose, onSelect })
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const others = useMemo(() => siblings.filter((p) => p !== piece), [siblings, piece]);
+  const elsewhere = useMemo(
+    () => related.filter((p) => p !== piece).slice(0, 12),
+    [related, piece]
+  );
+
   if (!piece) return null;
 
   const day = isoToDate(piece.date).toLocaleDateString(undefined, {
     weekday: "long", month: "long", day: "numeric", year: "numeric",
   });
-  const others = siblings.filter((p) => p !== piece);
+  const extra = piece.extra ?? {};
+  const extraKeys = Object.keys(extra);
+
+  // With "show empty" off, a section that is entirely blank is dropped whole.
+  const filt = (entries) => (showEmpty ? entries : entries.filter(([, v]) => v !== "" && v != null));
+  const render = (entries) =>
+    filt(entries).map(([label, value, raw]) => <Row key={label} label={label} value={value} raw={raw} />);
+  const section = (title, entries) => {
+    const kept = filt(entries);
+    return kept.length ? <Section title={title}>{render(entries)}</Section> : null;
+  };
 
   return (
     <>
@@ -54,42 +94,58 @@ export default function PieceDetail({ piece, siblings = [], onClose, onSelect })
           {piece.isPour ? null : <Badge tone="amber">No pieces</Badge>}
         </div>
 
-        <div className="section-label">Quantities</div>
-        <div className="cards" style={{ gridTemplateColumns: "repeat(2, 1fr)", marginBottom: 14 }}>
+        <div className="cards" style={{ gridTemplateColumns: "repeat(2, 1fr)", marginBottom: 4 }}>
           <div className="card"><div className="value sm">{piece.qty}</div><div className="label">Qty</div></div>
           <div className="card"><div className="value sm">{count(Math.round(piece.sf))}</div><div className="label">Square Feet</div></div>
           <div className="card"><div className="value sm">{fmt(piece.cy, 2)}</div><div className="label">Cubic Yards</div></div>
           <div className="card"><div className="value sm">{fmt(piece.lf, 2)}</div><div className="label">Linear Feet</div></div>
         </div>
 
-        <div className="section-label">Job</div>
-        <dl>
-          <Row label="Job Number">{piece.jobNo}</Row>
-          <Row label="Job Name">{piece.jobTitle}</Row>
-          <Row label="Phase">{piece.phaseName}</Row>
-        </dl>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, color: "var(--text-secondary)", cursor: "pointer", marginTop: 10 }}>
+          <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
+          Show fields that are empty for this piece
+        </label>
 
-        <div className="section-label" style={{ marginTop: 16 }}>Production</div>
-        <dl>
-          <Row label="Piece Mark">{piece.mark}</Row>
-          <Row label="Product Code">{piece.prdCode}</Row>
-          <Row label="Cross Section">{piece.crossSection}</Row>
-          <Row label="Mold">{piece.mold}</Row>
-          <Row label="Leadman">{piece.leadman}</Row>
-        </dl>
+        {section("Schedule", [
+          ["Plant", piece.plant],
+          ["Bed", piece.bed],
+          ["Bed Date", piece.date],
+          ["Position", piece.pos],
+          ["Leadman", piece.leadman],
+        ])}
 
-        <div className="section-label" style={{ marginTop: 16 }}>Identifiers</div>
-        <dl>
-          <Row label="Cast No.">{piece.castNo}</Row>
-          <Row label="CTRL Num">{piece.ctrlNum}</Row>
-          <Row label="Pour No.">{piece.pourNo}</Row>
-        </dl>
+        {section("Piece", [
+          ["Piece Mark", piece.mark],
+          ["Qty", piece.qty],
+          ["Total SF", piece.sf],
+          ["Total CY", piece.cy],
+          ["Total LF", piece.lf],
+          ["Product Code", piece.prdCode],
+          ["Cross Section", piece.crossSection],
+          ["Mold", piece.mold],
+        ])}
 
-        {piece.note && (
-          <>
-            <div className="section-label" style={{ marginTop: 16 }}>Bed Comment</div>
-            <p style={{ fontSize: 12, color: "#ecb84a", lineHeight: 1.6 }}>{piece.note}</p>
-          </>
+        {section("Job", [
+          ["Job Number", piece.jobNo],
+          ["Job Name", piece.jobTitle, piece.job],
+          ["Phase", piece.phaseName, piece.phase],
+        ])}
+
+        {section("Identifiers", [
+          ["Cast No.", piece.castNo],
+          ["CTRL Num", piece.ctrlNum],
+          ["Pour No.", piece.pourNo],
+          ["Cert", piece.cert],
+        ])}
+
+        {section("Bed Comment", [
+          ["Comment", piece.note, piece.comment],
+        ])}
+
+        {extraKeys.length > 0 && (
+          <Section title="Other columns in this export">
+            {extraKeys.map((k) => <Row key={k} label={k} value={extra[k]} />)}
+          </Section>
         )}
 
         {others.length > 0 && (
@@ -112,9 +168,29 @@ export default function PieceDetail({ piece, siblings = [], onClose, onSelect })
           </>
         )}
 
+        {elsewhere.length > 0 && (
+          <>
+            <div className="section-label" style={{ marginTop: 18 }}>
+              Mark {piece.mark} elsewhere in this schedule ({related.length - 1})
+            </div>
+            <div style={{ display: "grid", gap: 4 }}>
+              {elsewhere.map((p, i) => (
+                <button key={`${p.castNo}-x${i}`} className="pcard" onClick={() => onSelect?.(p)}
+                        style={{ borderLeftColor: "var(--rule)" }}>
+                  <span className="mark">{p.date}</span>
+                  <div className="meta">{p.plant} · {p.bed}{p.pos ? ` · pos ${p.pos}` : ""}</div>
+                </button>
+              ))}
+            </div>
+            <p className="hint" style={{ marginTop: 6 }}>
+              The same mark on more than one date usually means a re-lay or a repeated pour.
+            </p>
+          </>
+        )}
+
         <p className="hint" style={{ marginTop: 18 }}>
-          These are every field the Scheduled Production Report carries for this piece.
-          Shop-completion status is not in the export — see the note above the board.
+          Every field above comes from the Scheduled Production Report. Shop-completion
+          status is not in that export — see the note under the board.
         </p>
       </aside>
     </>

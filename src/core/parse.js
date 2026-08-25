@@ -153,13 +153,34 @@ export async function parseFile(file, schema) {
       const raw = header == null ? undefined : rec[header];
       row[field.key] = (coerce[field.type] || toText)(raw);
     }
+
+    // Carry any column the schema doesn't name through under `extra`, keyed by
+    // its original header. Without this a column Concrete Vision adds later is
+    // silently discarded at import and can never be shown. Only non-empty
+    // values are kept, so an always-blank column costs nothing.
+    if (unmapped.length) {
+      const extra = {};
+      for (const header of unmapped) {
+        const v = toText(rec[header]);
+        if (v !== "") extra[header] = v;
+      }
+      if (Object.keys(extra).length) row.extra = extra;
+    }
+
     if (schema.derive) Object.assign(row, schema.derive(row, rec));
     if (schema.isEmptyRow?.(row)) { dropped++; continue; }
     rows.push(row);
   }
 
   if (dropped) warnings.push(`${dropped} blank or zero row(s) skipped.`);
-  if (unmapped.length) warnings.push(`Unused columns: ${unmapped.join(", ")}`);
+  if (unmapped.length) {
+    const carried = rows.filter((r) => r.extra).length;
+    warnings.push(
+      `Columns not used by this module: ${unmapped.join(", ")}` +
+      (carried ? ` — values kept and shown in detail views (${carried} rows).`
+               : " — empty in every row.")
+    );
+  }
   if (sheetNames.length > 1)
     warnings.push(`Read sheet "${sheetName}" of ${sheetNames.length} in the workbook.`);
 

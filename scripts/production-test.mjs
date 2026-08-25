@@ -26,17 +26,38 @@ const ok = (name, cond, detail = "") => {
   console.log(`${cond ? "  ok  " : "FAIL  "} ${name}${detail ? ` (${detail})` : ""}`);
 };
 
+const toText = (v) => (v == null ? "" : String(v).trim());
+
 function build(records, headers) {
   const { mapping, missing, unmapped } = mapColumns(headers, schema);
   const rows = records.map((rec) => {
     const row = {};
     for (const f of schema.fields) {
       const v = rec[mapping[f.key]];
-      row[f.key] = f.type === "date" ? toIsoDate(v) : f.type === "number" ? toNumber(v) : String(v ?? "").trim();
+      row[f.key] = f.type === "date" ? toIsoDate(v) : f.type === "number" ? toNumber(v) : toText(v);
+    }
+    // Mirrors parse.js: anything the schema doesn't name is carried in `extra`.
+    if (unmapped.length) {
+      const extra = {};
+      for (const h of unmapped) { const v = toText(rec[h]); if (v !== "") extra[h] = v; }
+      if (Object.keys(extra).length) row.extra = extra;
     }
     return { ...row, ...schema.derive(row) };
   }).filter((r) => !schema.isEmptyRow(r));
   return { rows, missing, unmapped, mapping };
+}
+
+/**
+ * No column may be silently discarded: each export header must either map to a
+ * schema field, survive in `extra`, or be empty in every single row.
+ */
+function unreachableColumns(headers, mapping, rows, records) {
+  const byHeader = Object.fromEntries(Object.entries(mapping).map(([k, h]) => [h, k]));
+  return headers.filter((h) =>
+    byHeader[h] === undefined &&
+    !rows.some((r) => r.extra && h in r.extra) &&
+    !records.every((rec) => toText(rec[h]) === "")
+  );
 }
 
 console.log("\nSchema derivations");
@@ -72,6 +93,20 @@ ok("bed-activity rows carry no volume",
    s.rows.filter((r) => !r.isPour).every((r) => r.sf === 0 && r.cy === 0 && r.lf === 0));
 ok("every row lands on a calendar day", s.rows.every((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date)));
 eq("months resolve", monthsIn(s.rows.map((r) => r.date)), ["2026-08"]);
+
+console.log("\nNothing is discarded at import");
+// A column the schema doesn't know about must still reach the detail view.
+const withNew = csv.records.map((r) => ({ ...r, "Future CV Column": "kept-me" }));
+const grown = build(withNew, [...csv.headers, "Future CV Column"]);
+ok("an unknown column is reported as unmapped", grown.unmapped.includes("Future CV Column"));
+ok("its values survive on the row",
+   grown.rows.every((r) => r.extra?.["Future CV Column"] === "kept-me"));
+eq("no column is unreachable",
+   unreachableColumns([...csv.headers, "Future CV Column"], grown.mapping, grown.rows, withNew), []);
+// An always-empty column costs nothing: no `extra` object is created for it.
+const blank = build(csv.records.map((r) => ({ ...r, "Always Blank": "" })), [...csv.headers, "Always Blank"]);
+ok("an always-empty column adds no payload",
+   blank.rows.every((r) => !r.extra || !("Always Blank" in r.extra)));
 
 console.log("\nCalendar grid");
 const wk = weeksOf("2026-08");
@@ -127,7 +162,8 @@ if (existsSync(REAL)) {
   const recs = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
   const r = build(recs, Object.keys(recs[0]));
   eq("no required columns missing", r.missing.map((f) => f.label), []);
-  eq("only Cert is unmapped", r.unmapped, ["Cert"]);
+  eq("every column is mapped", r.unmapped, []);
+  eq("no column unreachable", unreachableColumns(Object.keys(recs[0]), r.mapping, r.rows, recs), []);
   eq("every row retained", r.rows.length, recs.length);
   ok("bed-activity rows carry no volume",
      r.rows.filter((x) => !x.isPour).every((x) => x.sf === 0 && x.cy === 0));

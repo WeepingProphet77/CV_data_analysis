@@ -38,8 +38,10 @@ these are pours that are *scheduled*, so the UI never claims anything was produc
 - **Board** — the main view. A bed × day planning grid: beds down the side, every
   day across the top, cells holding `<job no> <piece mark>` cards colored by job,
   phase or product code. Per-day totals (pours, pieces, CY, SF) run across the top
-  and per-week totals sit between the weeks. Click any piece to see every field
-  the export carries for it. Modeled on Concrete Vision's own planning view —
+  and per-week totals sit between the weeks. Click any piece for a panel listing
+  every field the export carries — including ones that are blank, the raw source
+  text behind any cleaned-up value, other pieces sharing that bed-day, and every
+  other date the same mark appears on. Modeled on Concrete Vision's own view —
   though the export has no shop-status fields, so cards can't reproduce CV's
   status colors.
 - **Calendar** — month view. Month calendar for one plant (or all), each day

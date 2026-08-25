@@ -149,8 +149,14 @@ out. `production` is being built from a real export; see §11.
   parenthesized negatives, currency symbols. Unparseable numbers become `0`
   rather than `NaN`, which would poison every downstream sum.
 - Missing **required** columns throw a message naming the column and listing the
-  headers actually found. Missing optional columns are silent; unused columns
-  become an import note.
+  headers actually found. Missing optional columns are silent.
+- **No column is ever discarded.** Any header the schema doesn't name is carried
+  onto every row as `row.extra[header]` (non-empty values only, so an
+  always-blank column costs nothing) and rendered in the detail views under
+  "Other columns in this export". This is why a column Concrete Vision adds
+  later shows up with no code change — and it is covered by a test that asserts
+  every export header is reachable from a parsed row. Don't "clean up" by
+  dropping unmapped columns; add a schema field for them instead.
 
 ### Persistence
 
@@ -381,7 +387,7 @@ one sheet, 20 columns, 4,358 rows covering 2026-08-01 → 2026-08-31.
 | Qty | `qty` | **only 0, 1 or 2** — sum it for a piece count, never count rows |
 | Total SF / CY / LF | `sf` `cy` `lf` | square feet, cubic yards, linear feet |
 | Pos | `pos` | position on the bed |
-| Cert | — | **empty in every row**; not mapped |
+| Cert | `cert` | empty in every row of the sample export, but mapped anyway |
 | Job Name | `job` | `"NNNNN - TITLE"` for 60 of 63 — parse defensively |
 | Bed Comment | `comment` | carries literal HTML (`<b>Bed Comment:</b> `) and an `N/A` sentinel; both stripped |
 | Prd Code | `prdCode` | |
@@ -489,3 +495,18 @@ Board specifics worth knowing:
   of the scroll container, and the corner cell needs both plus a higher
   `z-index`. The summary rows scroll away by design — pinning five more rows
   eats too much vertical space on a laptop.
+
+### Detail views are exhaustive by design
+
+`PieceDetail` lists **every** schema field whether or not it has a value, so
+"blank for this piece" is visibly distinct from "not in this report". A field
+whose stored value is derived also shows its source text (`Job Name` shows the
+cleaned title plus the raw `"43134 - 1401 CHURCH STREET"`; `Phase` and
+`Comment` likewise), so no derivation hides the original. `row.extra` is
+rendered after the named fields.
+
+There is a "show fields that are empty" toggle for a compact read, defaulting to
+**on** — completeness is the point of the panel.
+
+Apply the same rule to any future detail view: show the whole record, mark
+empties, never silently omit a field.

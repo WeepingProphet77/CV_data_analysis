@@ -83,6 +83,17 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
     return colorMapFor(ranked);
   }, [rows, colorBy]);
 
+  /** rows indexed by piece mark, for the "same mark elsewhere" cross-reference. */
+  const markIndex = useMemo(() => {
+    const map = new Map();
+    for (const r of rows) {
+      if (!r.mark) continue;
+      const bucket = map.get(r.mark);
+      if (bucket) bucket.push(r); else map.set(r.mark, [r]);
+    }
+    return map;
+  }, [rows]);
+
   const dayTotals = useMemo(() => {
     const map = new Map();
     for (const [date, bucket] of groupBy(rows, (r) => r.date)) {
@@ -105,6 +116,7 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
 
   const multiPlant = new Set(bedRows.map((b) => b.plant)).size > 1;
   const siblings = selected ? cellIndex.get(`${selected.bedKey}|${selected.date}`) ?? [] : [];
+  const related = selected?.mark ? markIndex.get(selected.mark) ?? [] : [];
 
   const summaryRows = [
     { key: "pours", label: "Total Pours", pick: (t) => t.pours, fmt: (v) => count(v) },
@@ -265,7 +277,7 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
       </p>
 
       {selected && (
-        <PieceDetail piece={selected} siblings={siblings}
+        <PieceDetail piece={selected} siblings={siblings} related={related}
                      onClose={() => setSelected(null)} onSelect={setSelected} />
       )}
     </div>

@@ -67,6 +67,8 @@ export const productionSchema = {
       aliases: ["lf", "linear feet", "totallf", "length"] },
     { key: "pos", label: "Pos", type: "number", required: false,
       aliases: ["position", "bed position"] },
+    { key: "cert", label: "Cert", type: "string", required: false,
+      aliases: ["certification", "cert code"] },
     { key: "job", label: "Job Name", type: "string", required: true,
       aliases: ["job", "project", "jobname", "project name"] },
     { key: "comment", label: "Bed Comment", type: "string", required: false,
