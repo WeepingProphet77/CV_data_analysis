@@ -92,3 +92,18 @@ export function ratio(n, digits = 1) {
   if (n == null || Number.isNaN(n)) return "—";
   return (Number(n) * 100).toFixed(digits) + "%";
 }
+
+/**
+ * Cost per square foot: 71.0341 -> "$71.03/SF". Null means "no footage to
+ * divide by", which is not the same as zero and must not render as "$0.00/SF".
+ */
+export function perSf(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `$${Number(n).toFixed(2)}/SF`;
+}
+
+/** Square feet, whole numbers with separators: 94717 -> "94,717 SF". */
+export function sqft(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return `${Math.round(Number(n)).toLocaleString()} SF`;
+}

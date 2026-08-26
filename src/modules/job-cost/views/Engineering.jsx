@@ -12,7 +12,7 @@
 import React, { useMemo } from "react";
 import { StatCard, Panel, Badge, MiniBar, SortableTh, useSort, compareBy } from "../../../components/ui.jsx";
 import BarChart from "../../../components/charts/BarChart.jsx";
-import { money, moneyCompact, ratio, count, fmt } from "../../../core/format.js";
+import { money, moneyCompact, ratio, count, fmt, perSf, sqft } from "../../../core/format.js";
 import { seriesColor, OTHER_COLOR } from "../../../core/palette.js";
 import { topNWithOther } from "../../../core/aggregate.js";
 import { engineeringRollup, RATE_BAND } from "../engineering.js";
@@ -112,6 +112,21 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
         </div>
       )}
 
+      {t.sfJobs > 0 && (
+        <Panel title="D&E cost per square foot">
+          <div className="cards">
+            <StatCard label="Budget / SF" value={perSf(t.perSfBudget)} sub={`Est Cost over ${sqft(t.sfArea.est)}`} />
+            <StatCard label="Forecast / SF" value={perSf(t.perSfForecast)} sub={`Projections over ${sqft(t.sfArea.proj)}`} />
+            <StatCard label="Actual / SF" value={perSf(t.perSfActual)} sub={`booked over ${sqft(t.sfArea.act)} to date`} />
+          </div>
+          <p className="hint" style={{ marginTop: 10 }}>
+            Engineering cost per square foot, over the {count(t.sfJobs)} of {count(t.jobs)} D&amp;E jobs that
+            report footage. Each rate divides a cost by the area measured at the same stage.
+            <strong> Actual / SF runs high early</strong> — engineering books before any panel is cast.
+          </p>
+        </Panel>
+      )}
+
       <div className="grid-2">
         <Panel title="D&E cost by discipline">
           <BarChart data={disciplineBars} valueFormat={moneyCompact} labelWidth={130} />
@@ -203,6 +218,8 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
                 <SortableTh column="variance" label="Var to Fcst" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="varToBudget" label="Var to Budget" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="pctProj" label="% of Fcst" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="perSfBudget" label="Budget /SF" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="perSfActual" label="Actual /SF" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="piecesAct" label="Pieces" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="designPct" label="Designed" sort={sort} onSort={onSort} align="right" />
               </tr>
@@ -225,6 +242,10 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
                                color={j.overProjection ? "var(--critical)" : "var(--series-3)"} />
                     )}
                   </td>
+                  <td className="num">{j.perSfBudget == null
+                    ? <span className="muted" title="This job reports no square footage">—</span>
+                    : perSf(j.perSfBudget)}</td>
+                  <td className="num">{j.perSfActual == null ? <span className="muted">—</span> : perSf(j.perSfActual)}</td>
                   <td className="num">{j.hasPieces ? count(Math.round(j.piecesAct)) : <span className="muted">—</span>}</td>
                   <td className="num nowrap">
                     {j.hasPieces
@@ -243,6 +264,8 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
                 <td className="num" style={{ color: t.variance < 0 ? "var(--critical)" : undefined }}>{money(t.variance)}</td>
                 <td className="num" style={{ color: t.varToBudget < 0 ? "var(--critical)" : undefined }}>{money(t.varToBudget)}</td>
                 <td className="num">{ratio(t.pctProj)}</td>
+                <td className="num">{perSf(t.perSfBudget)}</td>
+                <td className="num">{perSf(t.perSfActual)}</td>
                 <td className="num">{count(Math.round(t.piecesAct))}</td>
                 <td className="num">{ratio(t.designPct)}</td>
               </tr>

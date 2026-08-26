@@ -14,6 +14,8 @@ import {
 } from "../src/modules/job-cost/parse.js";
 import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/categories.js";
 import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
+import { isSquareFeetRow, isPieceRow, squareFeetFor, perSf, ratesFor } from "../src/modules/job-cost/squarefeet.js";
+import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
 import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
 import {
   disciplineOf, isInHouse, inRateBand, estIsHours, actIsHours, isLumpSum,
@@ -114,6 +116,61 @@ ok("a blank member is rejected", !isValidSelection({ members: [""], scope: SCOPE
 ok("an unknown scope is rejected", !isValidSelection({ members: [], scope: "sideways" }));
 ok("a missing members list is rejected", !isValidSelection({ scope: SCOPE_ALL }));
 ok("null is rejected", !isValidSelection(null));
+
+console.log("\nSquare feet");
+{
+  const Q = (product, est, proj, act) => ({ stage: "PROD", product, estQty: est, projQty: proj, actQty: act });
+  ok("an area row is recognised", isSquareFeetRow(Q("ARCHITECTURAL (SQ FT)", 1, 1, 1)));
+  ok("a piece row is not", !isSquareFeetRow(Q("ARCHITECTURAL (PCS)", 1, 1, 1)));
+  ok("a piece row is recognised as such", isPieceRow(Q("ARCHITECTURAL (PCS)", 1, 1, 1)));
+  ok("a D&E row is neither", !isSquareFeetRow({ stage: "D&E", product: "ARCHITECTURAL" }));
+  // "(SQ FT)" must be matched at the end, not anywhere in the name.
+  ok("case and spacing are tolerated", isSquareFeetRow(Q("WALLS (sq ft)", 1, 1, 1)));
+
+  const sf = squareFeetFor([
+    Q("ARCHITECTURAL (SQ FT)", 1000, 1200, 600),
+    Q("WALLS (SQ FT)", 500, 500, 500),
+    Q("ARCHITECTURAL (PCS)", 40, 44, 20),   // must not be added in
+  ]);
+  eq("area sums across products", [sf.est, sf.proj, sf.act], [1500, 1700, 1100]);
+  eq("pieces are excluded", sf.byProduct.length, 2);
+  eq("the (SQ FT) suffix is stripped for display", sf.byProduct[0].product, "ARCHITECTURAL");
+  ok("byProduct is ranked by forecast area", sf.byProduct[0].proj >= sf.byProduct[1].proj);
+
+  const none = squareFeetFor([Q("ARCHITECTURAL (PCS)", 40, 44, 20)]);
+  ok("a job with only piece rows has no footage", !none.hasSf);
+  eq("no footage means no rate, not a zero rate", perSf(1000, 0), null);
+  eq("a rate divides cost by area", perSf(1000, 100), 10);
+
+  const rates = ratesFor({ estCost: 1500, projCost: 1700, actCost: 550 }, sf);
+  eq("each rate uses its own stage's area", [rates.budget, rates.forecast, rates.actual], [1, 1, 0.5]);
+  const noRates = ratesFor({ estCost: 1500, projCost: 1700, actCost: 550 }, none);
+  eq("every rate is null without footage", [noRates.budget, noRates.forecast, noRates.actual], [null, null, null]);
+}
+
+console.log("\nJob derivation");
+{
+  const job = {
+    key: "P|1", jobNo: "1", plant: "P", netContract: 100000, estOhProfit: 20000, pctBilled: 0.5,
+    totals: { estCost: 90000, projCost: 80000, actCost: 40000, variance: 40000, curMo: 0 },
+  };
+  const qty = [{ stage: "PROD", jobKey: "P|1", product: "ARCHITECTURAL (SQ FT)", estQty: 1000, projQty: 1000, actQty: 500 }];
+  const d = deriveJob(job, qty);
+  eq("footage is attached", [d.sf.est, d.sf.proj, d.sf.act], [1000, 1000, 500]);
+  eq("budget per foot", d.perSf.budget, 90);
+  eq("forecast per foot", d.perSf.forecast, 80);
+  eq("actual per foot uses area produced to date", d.perSf.actual, 80);
+  eq("contract per foot", d.contractPerSf, 100);
+  eq("margin per foot", d.marginPerSf, 20);
+  eq("cost progress is against the projection", d.costProgress, 0.5);
+
+  const bare = deriveJob(job, undefined);
+  ok("a job with no quantity rows still derives", !bare.sf.hasSf && bare.perSf.budget === null);
+  ok("and its cost figures are unaffected", bare.costProgress === 0.5 && bare.variance === 40000);
+
+  const grouped = quantitiesByJob([{ jobKey: "a" }, { jobKey: "b" }, { jobKey: "a" }]);
+  eq("quantities group by job", [grouped.get("a").length, grouped.get("b").length], [2, 1]);
+}
 
 console.log("\nDrafting & Engineering classification");
 eq("checking codes", disciplineOf("60.020").label, "Checking");
@@ -377,6 +434,22 @@ if (existsSync(REAL_DIR)) {
        `est $${et.rateEst.toFixed(2)}/hr, act $${et.rateAct.toFixed(2)}/hr`);
     ok("D&E: no total is NaN or Infinity",
        Object.values(et).every((v) => typeof v !== "number" || Number.isFinite(v)));
+    const derived = realJobs.map((j) => deriveJob(j, quantitiesByJob(realQty).get(j.key)));
+    const withSf = derived.filter((j) => j.sf.hasSf);
+    ok("$/SF: a job without footage has null rates, never zero",
+       derived.filter((j) => !j.sf.hasSf)
+              .every((j) => j.perSf.budget === null && j.perSf.actual === null && j.contractPerSf === null));
+    ok("$/SF: no rate is NaN or Infinity",
+       derived.every((j) => [j.perSf.budget, j.perSf.forecast, j.perSf.actual, j.contractPerSf, j.marginPerSf]
+                              .every((v) => v === null || Number.isFinite(v))));
+    ok("$/SF: area never includes piece rows",
+       withSf.every((j) => j.sf.byProduct.every((b) => !/PCS/i.test(b.product))));
+    ok("$/SF: rates land in a plausible range for precast",
+       (() => {
+         const S = (f) => withSf.reduce((a, j) => a + f(j), 0);
+         const r = S((j) => j.totals.projCost) / S((j) => j.sf.proj);
+         return r > 10 && r < 500;
+       })(), "forecast $/SF");
     ok("D&E: every per-job figure is finite",
        eng.byJob.every((j) => [j.rateAct, j.rateEst, j.designPct, j.designLag, j.pctProj].every(Number.isFinite)));
     console.log(`  --  D&E: ${eng.byJob.length} jobs, ${et.hoursAct.toFixed(0)} hours, ` +

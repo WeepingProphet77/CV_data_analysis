@@ -866,6 +866,40 @@ A starred subset of jobs, persisted, with every tab isolated to it.
 - Both `lib.ready` and `mine.ready` gate the first render — otherwise a saved
   "My Projects" choice flashes as "All".
 
+### Cost per square foot
+
+**The number the business is judged on.** Derived once in `squarefeet.js` and
+attached to every job by `jobMetrics.deriveJob`, so no view recomputes it.
+
+Footage comes from the PROD quantity rows whose product name ends `(SQ FT)`,
+summed across product types. The matching `(PCS)` rows are piece counts and must
+never be added in — there is a test for exactly that.
+
+Three rates, each dividing a cost by the footage measured at the **same stage**:
+
+| Rate | | Portfolio total |
+|---|---|---|
+| Budget / SF | Est Cost ÷ estimated SF | $71.03 |
+| Forecast / SF | Projections ÷ forecast SF | $59.27 |
+| Actual / SF | Act Cost ÷ SF produced to date | $50.36 |
+| Contract / SF | Net Contract ÷ forecast SF | $79.63 |
+| Margin / SF | Est. OH & Profit ÷ forecast SF | $20.36 |
+
+Pairing each numerator with its own denominator is the same discipline the hours
+rates use: never divide a forecast cost by an as-built area.
+
+**Actual / SF runs high early and is not a projection.** Engineering and
+materials book before any panel is cast, so the rate starts above the forecast
+and converges as production catches up. The UI says so wherever it appears.
+
+**Coverage is partial, and that stays visible.** 82 of 126 jobs carry footage;
+**Monroeville carries none at all** (0 of 15). A job without it gets `hasSf:
+false` and **null** rates — never `0`. `perSf()` returns null rather than zero
+precisely so a missing rate renders as a dash and can't be mistaken for a job
+that costs nothing per foot. Aggregates divide only over the jobs that report
+footage, so the rate is not diluted by the ones that don't, and the UI states
+how many jobs a rate is based on.
+
 ### The Drafting & Engineering tab
 
 A role dashboard over the D&E section (60.x) plus the D&E quantity rows, which
@@ -916,6 +950,10 @@ with the implied per-unit figure so the exclusion is auditable.
 The band (`RATE_BAND`, $10–$250/hr) is wide on purpose — real rates top out
 around $69 and excluded lines start above $220, so nothing sits near a boundary
 and the threshold is not sensitive.
+
+**Hours are better covered than square feet, despite appearances.** Hours reach
+97 of 126 jobs (77%) across all four plants; square feet reach 82 (65%) and skip
+Monroeville entirely. Both are shown; neither is a complete denominator.
 
 **How far to trust hours at all.** The column is headed `Est Qty`, not "Est
 Hours" — reading it as hours is inference. It is sound in aggregate but soft per

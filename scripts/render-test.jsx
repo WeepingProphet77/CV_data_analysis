@@ -42,6 +42,7 @@ import { StarButton, ScopeToggle, NoProjectsYet } from "../src/modules/job-cost/
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { categoryOf } from "../src/modules/job-cost/categories.js";
 import { engineeringRollup, actIsHours } from "../src/modules/job-cost/engineering.js";
+import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
 import ScheduleModule from "../src/modules/schedule/index.jsx";
 import App from "../src/App.jsx";
@@ -79,11 +80,10 @@ const prodDay = prodRows[0].date;
  * committed (CLAUDE.md §1).
  */
 const jcSources = sampleWorkbooks().map((wb) => buildSource(wb.sheets, { plant: wb.plant, fileName: wb.fileName }));
-const jcJobs = jcSources.flatMap((s) => s.jobs).map((j) => ({
-  ...j,
-  costProgress: j.totals.projCost > 0 ? j.totals.actCost / j.totals.projCost : 0,
-  overProjection: j.totals.projCost > 0 && j.totals.actCost > j.totals.projCost,
-}));
+// Decorated through the same function the app uses, so a fixture can never
+// drift from what the views require.
+const jcQtyForJob = quantitiesByJob(jcSources.flatMap((s) => s.quantities));
+const jcJobs = jcSources.flatMap((s) => s.jobs).map((j) => deriveJob(j, jcQtyForJob.get(j.key)));
 const jcCosts = jcSources.flatMap((s) => s.costs).map((c) => ({ ...c, category: categoryOf(c.code).label }));
 const jcQuantities = jcSources.flatMap((s) => s.quantities);
 const jcQtyByJob = new Map();

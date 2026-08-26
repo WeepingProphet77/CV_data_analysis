@@ -8,6 +8,8 @@
  * stages the production quantities use.
  */
 
+import { perSf } from "./squarefeet.js";
+
 /** Discipline for each D&E code, by its sub-prefix. */
 export const DISCIPLINES = {
   checking: { id: "checking", label: "Checking", test: /^60\.0/ },
@@ -190,6 +192,12 @@ export function engineeringRollup(jobs, costs, quantities) {
       outsourced, outsourcedShare: safeRatio(outsourced, t.actCost),
       rework,
       piecesEst, piecesProj, piecesAct, designPct, hasPieces: piecesProj > 0,
+      // Engineering cost per square foot -- the same denominator the business
+      // is judged on, applied to the D&E slice. Null when the job reports none.
+      sf: j.sf || { est: 0, proj: 0, act: 0, hasSf: false },
+      perSfBudget: perSf(t.estCost, j.sf?.est),
+      perSfForecast: perSf(t.projCost, j.sf?.proj),
+      perSfActual: perSf(t.actCost, j.sf?.act),
       jobPct,
       // Design trailing the job's overall spend by more than 10 points is the
       // signal an engineering lead wants surfaced, not buried in a column.
@@ -278,6 +286,29 @@ export function engineeringRollup(jobs, costs, quantities) {
       rework: deLines.filter((l) => /REWORK/i.test(l.desc)).reduce((s, l) => s + l.actCost, 0),
       jobs: byJob.length,
       jobsWithPieces: byJob.filter((j) => j.hasPieces).length,
+      ...(() => {
+        // $/SF is computed over only the jobs that report footage, so the rate
+        // is not diluted by jobs (all of Monroeville) that report none.
+        const withSf = jobs.filter((j) => j.sf?.hasSf && linesByJob.has(j.key));
+        const area = withSf.reduce(
+          (a, j) => ({ est: a.est + j.sf.est, proj: a.proj + j.sf.proj, act: a.act + j.sf.act }),
+          { est: 0, proj: 0, act: 0 }
+        );
+        const cost = withSf.reduce(
+          (a, j) => {
+            const t = (linesByJob.get(j.key) || []).reduce(addLine, emptyTotals());
+            return { est: a.est + t.estCost, proj: a.proj + t.projCost, act: a.act + t.actCost };
+          },
+          { est: 0, proj: 0, act: 0 }
+        );
+        return {
+          sfJobs: withSf.length,
+          sfArea: area,
+          perSfBudget: perSf(cost.est, area.est),
+          perSfForecast: perSf(cost.proj, area.proj),
+          perSfActual: perSf(cost.act, area.act),
+        };
+      })(),
       hoursAgreement: hoursAgreement(deLines),
     },
   };

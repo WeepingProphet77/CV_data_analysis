@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from "react";
 import { categoryOf } from "./categories.js";
+import { deriveJob, quantitiesByJob } from "./jobMetrics.js";
 
 /** Union of every loaded source, with per-job cost lines attached. */
 export function useJobCostData(sources) {
@@ -15,29 +16,17 @@ export function useJobCostData(sources) {
     const costs = [];
     const quantities = [];
 
+    // Quantity rows are grouped first: a job's footage is needed while its
+    // record is being built, not after.
+    const qtyForJob = quantitiesByJob(sources.flatMap((s) => s.quantities));
+
     for (const src of sources) {
       for (const c of src.costs) {
         const cat = categoryOf(c.code);
         costs.push({ ...c, category: cat.label, categoryId: cat.id });
       }
       for (const q of src.quantities) quantities.push(q);
-      for (const j of src.jobs) {
-        const t = j.totals;
-        jobs.push({
-          ...j,
-          // Cost progress is measured against the *projection*, not the
-          // estimate: the estimate is what was bid, the projection is what the
-          // job is now expected to cost, and progress against a stale bid
-          // reads as if a job were further along than it is.
-          costProgress: t.projCost > 0 ? t.actCost / t.projCost : 0,
-          // Negative variance means the job is tracking over its projection.
-          variance: t.variance,
-          overProjection: t.projCost > 0 && t.actCost > t.projCost,
-          // A job billed well behind its cost is spending money it has not
-          // invoiced — the cash question, distinct from the margin question.
-          billedVsCost: j.pctBilled - (t.projCost > 0 ? t.actCost / t.projCost : 0),
-        });
-      }
+      for (const j of src.jobs) jobs.push(deriveJob(j, qtyForJob.get(j.key)));
     }
 
     const byJobKey = new Map(jobs.map((j) => [j.key, j]));

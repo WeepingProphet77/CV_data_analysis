@@ -9,7 +9,7 @@
  */
 import React, { useMemo, useState } from "react";
 import { BackLink, Panel, Badge, StatCard, MiniBar } from "../../../components/ui.jsx";
-import { money, ratio, fmt, count } from "../../../core/format.js";
+import { money, ratio, fmt, count, perSf, sqft } from "../../../core/format.js";
 import { JOB_FIELDS, COST_FIELDS } from "../schema.js";
 import { SECTIONS, SECTION_LABELS } from "../categories.js";
 import { StarButton } from "./MyProjects.jsx";
@@ -115,6 +115,16 @@ export default function JobDetail({ job, costs, quantities, production, mine, on
         <StatCard label="Billed" value={money(job.amountBilled)} sub={`${ratio(job.pctBilled)} of contract`} small />
       </div>
 
+      {job.sf.hasSf && (
+        <div className="cards">
+          <StatCard label="Contract / SF" value={perSf(job.contractPerSf)} sub={sqft(job.sf.proj) + " forecast"} small />
+          <StatCard label="Budget / SF" value={perSf(job.perSf.budget)} sub={sqft(job.sf.est) + " estimated"} small />
+          <StatCard label="Forecast / SF" value={perSf(job.perSf.forecast)} sub="projected cost per foot" small />
+          <StatCard label="Actual / SF" value={perSf(job.perSf.actual)} sub={sqft(job.sf.act) + " produced"} small />
+          <StatCard label="Margin / SF" value={perSf(job.marginPerSf)} sub="Est. OH & Profit per foot" small />
+        </div>
+      )}
+
       {job.estOhProfitPct < 0 && (
         <div className="notice red">
           Projected cost exceeds the net contract by {money(-job.estOhProfit)} — this job is forecast to finish at a loss.
@@ -124,6 +134,38 @@ export default function JobDetail({ job, costs, quantities, production, mine, on
         <div className="notice amber">
           This sheet carried no “Job Totals” row; the totals shown are summed from its cost lines.
         </div>
+      )}
+
+      {job.sf.hasSf && job.sf.byProduct.length > 1 && (
+        <Panel title="Square feet by product">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Product</th><th className="num">Estimated</th><th className="num">Forecast</th><th className="num">Produced</th><th className="num">Complete</th></tr>
+              </thead>
+              <tbody>
+                {job.sf.byProduct.map((b) => (
+                  <tr key={b.product}>
+                    <td>{b.product}</td>
+                    <td className="num">{fmt(b.est, 0)}</td>
+                    <td className="num">{fmt(b.proj, 0)}</td>
+                    <td className="num">{fmt(b.act, 0)}</td>
+                    <td className="num">{b.proj > 0 ? ratio(b.act / b.proj) : <span className="muted">—</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td><strong>Total</strong></td>
+                  <td className="num">{fmt(job.sf.est, 0)}</td>
+                  <td className="num">{fmt(job.sf.proj, 0)}</td>
+                  <td className="num">{fmt(job.sf.act, 0)}</td>
+                  <td className="num">{job.sf.proj > 0 ? ratio(job.sf.act / job.sf.proj) : "—"}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Panel>
       )}
 
       {quantities.length > 0 && (
