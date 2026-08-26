@@ -875,24 +875,40 @@ Footage comes from the PROD quantity rows whose product name ends `(SQ FT)`,
 summed across product types. The matching `(PCS)` rows are piece counts and must
 never be added in — there is a test for exactly that.
 
-Three rates, each dividing a cost by the footage measured at the **same stage**:
+**Every rate divides by the same denominator — the job square footage**
+(`sf.job`, the forecast area, falling back to the estimate). Not the area cast
+so far. That is the whole point: budget, forecast and actual are then directly
+comparable, and actual rises toward forecast as the job completes.
 
 | Rate | | Portfolio total |
 |---|---|---|
-| Budget / SF | Est Cost ÷ estimated SF | $71.03 |
-| Forecast / SF | Projections ÷ forecast SF | $59.27 |
-| Actual / SF | Act Cost ÷ SF produced to date | $50.36 |
-| Contract / SF | Net Contract ÷ forecast SF | $79.63 |
-| Margin / SF | Est. OH & Profit ÷ forecast SF | $20.36 |
+| Contract / SF | Net Contract ÷ job SF | $78.57 |
+| Budget / SF | Est Cost ÷ job SF | $54.62 |
+| Forecast / SF | Projections ÷ job SF | $58.48 |
+| Actual / SF | Act Cost ÷ job SF | $39.41 |
+| Margin / SF | Est. OH & Profit ÷ job SF | $20.09 |
 
-Pairing each numerator with its own denominator is the same discipline the hours
-rates use: never divide a forecast cost by an as-built area.
+**Don't divide by area produced to date.** An earlier cut paired each rate with
+its own stage's footage — actual cost over as-built area — which sounds
+principled and is wrong for this purpose: it produces a number that starts
+enormous, falls as production catches up, and cannot be read against a budget
+rate at all. The invariant to hold onto, and there is a test for it:
 
-**Actual / SF runs high early and is not a projection.** Engineering and
-materials book before any panel is cast, so the rate starts above the forecast
-and converges as production catches up. The UI says so wherever it appears.
+> actual /SF ÷ forecast /SF **must equal** cost progress.
 
-**Coverage is partial, and that stays visible.** 82 of 126 jobs carry footage;
+That only holds when both divide by the same area. If it drifts, a rate is
+dividing by something else.
+
+`asBid` is the one deliberate exception — Est Cost over the area *estimated at
+bid time*, kept because it answers a different question. Where a job's scope has
+moved it differs from `budget`, and the job detail page says so rather than
+smoothing it away. Across the portfolio the scope grew from 5.20M to 6.76M SF,
+which is why as-bid is $71.03/SF against a budget rate of $54.62.
+
+Area cast to date is kept as **`sfComplete`**, a progress figure, deliberately
+out of any cost denominator.
+
+**Coverage is partial, and that stays visible.****Coverage is partial, and that stays visible.** 82 of 126 jobs carry footage;
 **Monroeville carries none at all** (0 of 15). A job without it gets `hasSf:
 false` and **null** rates — never `0`. `perSf()` returns null rather than zero
 precisely so a missing rate renders as a dash and can't be mistaken for a job

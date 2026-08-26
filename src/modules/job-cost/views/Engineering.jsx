@@ -115,14 +115,16 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
       {t.sfJobs > 0 && (
         <Panel title="D&E cost per square foot">
           <div className="cards">
-            <StatCard label="Budget / SF" value={perSf(t.perSfBudget)} sub={`Est Cost over ${sqft(t.sfArea.est)}`} />
-            <StatCard label="Forecast / SF" value={perSf(t.perSfForecast)} sub={`Projections over ${sqft(t.sfArea.proj)}`} />
-            <StatCard label="Actual / SF" value={perSf(t.perSfActual)} sub={`booked over ${sqft(t.sfArea.act)} to date`} />
+            <StatCard label="Budget / SF" value={perSf(t.perSfBudget)} sub="D&E Est Cost per foot" />
+            <StatCard label="Forecast / SF" value={perSf(t.perSfForecast)} sub="D&E projected per foot" />
+            <StatCard label="Actual / SF" value={perSf(t.perSfActual)} sub="D&E spent per foot so far" />
+            <StatCard label="Job Square Feet" value={sqft(t.sfArea.job)} sub={`over ${count(t.sfJobs)} jobs`} small />
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
             Engineering cost per square foot, over the {count(t.sfJobs)} of {count(t.jobs)} D&amp;E jobs that
-            report footage. Each rate divides a cost by the area measured at the same stage.
-            <strong> Actual / SF runs high early</strong> — engineering books before any panel is cast.
+            report footage. All three divide by the <strong>job square footage</strong> — not the area cast so
+            far — so budget, forecast and actual read against each other directly, and actual rises toward
+            forecast as the design work completes.
           </p>
         </Panel>
       )}

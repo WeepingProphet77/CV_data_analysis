@@ -117,10 +117,12 @@ export default function JobDetail({ job, costs, quantities, production, mine, on
 
       {job.sf.hasSf && (
         <div className="cards">
-          <StatCard label="Contract / SF" value={perSf(job.contractPerSf)} sub={sqft(job.sf.proj) + " forecast"} small />
-          <StatCard label="Budget / SF" value={perSf(job.perSf.budget)} sub={sqft(job.sf.est) + " estimated"} small />
+          <StatCard label="Job Square Feet" value={sqft(job.sf.job)}
+                    sub={job.sfComplete == null ? "—" : `${ratio(job.sfComplete)} cast to date`} small />
+          <StatCard label="Contract / SF" value={perSf(job.contractPerSf)} sub="revenue per foot" small />
+          <StatCard label="Budget / SF" value={perSf(job.perSf.budget)} sub="Est Cost per foot" small />
           <StatCard label="Forecast / SF" value={perSf(job.perSf.forecast)} sub="projected cost per foot" small />
-          <StatCard label="Actual / SF" value={perSf(job.perSf.actual)} sub={sqft(job.sf.act) + " produced"} small />
+          <StatCard label="Actual / SF" value={perSf(job.perSf.actual)} sub="spent per foot so far" small />
           <StatCard label="Margin / SF" value={perSf(job.marginPerSf)} sub="Est. OH & Profit per foot" small />
         </div>
       )}
@@ -134,6 +136,15 @@ export default function JobDetail({ job, costs, quantities, production, mine, on
         <div className="notice amber">
           This sheet carried no “Job Totals” row; the totals shown are summed from its cost lines.
         </div>
+      )}
+
+      {job.sf.hasSf && Math.abs(job.sf.proj - job.sf.est) > 0.5 && (
+        <p className="hint" style={{ margin: "0 0 12px" }}>
+          Every /SF figure divides by the job square footage ({sqft(job.sf.job)}), not the area cast so far.
+          The job was estimated at {sqft(job.sf.est)}, so its scope has moved{" "}
+          {job.sf.proj > job.sf.est ? "up" : "down"} by {sqft(Math.abs(job.sf.proj - job.sf.est))} —
+          at the bid area the budget rate was {perSf(job.perSf.asBid)}.
+        </p>
       )}
 
       {job.sf.hasSf && job.sf.byProduct.length > 1 && (

@@ -101,11 +101,12 @@ something. A starred job whose plant isn't currently loaded stays in the list an
 is reported rather than quietly dropped.
 
 **Cost per square foot** appears wherever it applies — the portfolio, each plant,
-each job, and the engineering tab. Budget, forecast and actual rates each divide a
-cost by the footage measured at the same stage, alongside contract and margin per
-foot. Actual /SF runs high early, since engineering and materials book before any
-panel is cast. Jobs that report no footage show a dash rather than a zero, and are
-excluded from the aggregate rates rather than dragging them down.
+each job, and the engineering tab. Contract, budget, forecast and actual all divide
+by the same denominator, **the job square footage** — not the area cast so far — so
+they read against each other directly and actual rises toward forecast as the job
+completes. Square feet cast to date is shown separately, as progress. Jobs that
+report no footage show a dash rather than a zero, and are excluded from the
+aggregate rates rather than dragging them down.
 
 Margin means **Est. OH & Profit** — net contract against *projected* cost, the
 margin a job is expected to finish at. The report's *Net* OH & Profit is contract

@@ -27,7 +27,7 @@ export const isPieceRow = (q) => q.stage === "PROD" && !/\(SQ\s*FT\)/i.test(q.pr
  */
 export function squareFeetFor(quantities) {
   const rows = (quantities || []).filter(isSquareFeetRow);
-  const out = { est: 0, proj: 0, act: 0, hasSf: rows.length > 0, byProduct: [] };
+  const out = { est: 0, proj: 0, act: 0, job: 0, hasSf: rows.length > 0, byProduct: [] };
   for (const q of rows) {
     out.est += q.estQty;
     out.proj += q.projQty;
@@ -38,7 +38,22 @@ export function squareFeetFor(quantities) {
     });
   }
   out.byProduct.sort((a, b) => b.proj - a.proj);
+  out.job = jobSquareFeet(out);
   return out;
+}
+
+/**
+ * The job's square footage — how big the job *is*, not how much of it has been
+ * cast. This is the denominator for every $/SF rate.
+ *
+ * It is the forecast area (Projections Total), which is the current statement
+ * of the job's scope, falling back to the estimate when a job carries no
+ * forecast. Dividing by area *produced to date* instead would give a rate that
+ * starts enormous and falls as production catches up, which cannot be compared
+ * against a budget rate and is not what anyone means by "cost per square foot".
+ */
+export function jobSquareFeet(sf) {
+  return sf.proj > 0 ? sf.proj : sf.est;
 }
 
 /**
@@ -50,22 +65,26 @@ export function squareFeetFor(quantities) {
 export const perSf = (cost, sf) => (sf > 0 ? cost / sf : null);
 
 /**
- * The three rates for a set of cost totals and square feet.
+ * Cost per square foot, all three over the **same** denominator: the job's
+ * square footage.
  *
- * Each rate divides a cost by the footage from the *same* stage — budget cost
- * over estimated feet, forecast over forecast, actual over actual — so no rate
- * mixes a numerator and denominator that were measured at different times.
+ * A common denominator is the point. Budget, forecast and actual are then
+ * directly comparable — "we bid $71/SF, we now expect $59/SF, we have spent
+ * $44/SF so far" — and actual rises toward forecast as the job completes
+ * instead of starting from a meaningless number.
  *
- * `actual` is the one to read carefully: cost front-loads onto engineering and
- * materials before any panel is cast, so early in a job it runs high and only
- * converges on the forecast as production catches up. It is a rate achieved to
- * date, not a projection.
+ * `asBid` is the exception and is kept because it answers a different question:
+ * the rate at the time of bid, on the area estimated then. Where a job's scope
+ * has moved it differs from `budget`, and that difference is worth seeing
+ * rather than smoothing away.
  */
 export function ratesFor(totals, sf) {
+  const area = sf.job || jobSquareFeet(sf);
   return {
-    budget: perSf(totals.estCost, sf.est),
-    forecast: perSf(totals.projCost, sf.proj),
-    actual: perSf(totals.actCost, sf.act),
+    budget: perSf(totals.estCost, area),
+    forecast: perSf(totals.projCost, area),
+    actual: perSf(totals.actCost, area),
+    asBid: perSf(totals.estCost, sf.est),
   };
 }
 
@@ -75,8 +94,12 @@ export function totalSquareFeet(jobs) {
     (t, j) => {
       const s = j.sf;
       if (!s?.hasSf) return t;
-      return { est: t.est + s.est, proj: t.proj + s.proj, act: t.act + s.act, jobs: t.jobs + 1, hasSf: true };
+      return {
+        est: t.est + s.est, proj: t.proj + s.proj, act: t.act + s.act,
+        job: t.job + (s.job || jobSquareFeet(s)),
+        jobs: t.jobs + 1, hasSf: true,
+      };
     },
-    { est: 0, proj: 0, act: 0, jobs: 0, hasSf: false }
+    { est: 0, proj: 0, act: 0, job: 0, jobs: 0, hasSf: false }
   );
 }

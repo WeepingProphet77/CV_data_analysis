@@ -17,11 +17,14 @@ export function deriveJob(job, quantities) {
   return {
     ...job,
     sf,
-    // $/SF at each stage, each dividing a cost by the footage measured at the
-    // same stage, so no rate mixes a forecast cost with an as-built area.
+    // Every $/SF rate divides by the *job's* square footage, so budget,
+    // forecast and actual are directly comparable.
     perSf: ratesFor(t, sf),
-    contractPerSf: sf.proj > 0 ? job.netContract / sf.proj : null,
-    marginPerSf: sf.proj > 0 ? job.estOhProfit / sf.proj : null,
+    contractPerSf: sf.job > 0 ? job.netContract / sf.job : null,
+    marginPerSf: sf.job > 0 ? job.estOhProfit / sf.job : null,
+    // How much of the job's area has actually been cast — progress, kept
+    // separate from the cost rates rather than buried in their denominator.
+    sfComplete: sf.job > 0 ? sf.act / sf.job : null,
     // Cost progress is measured against the *projection*, not the estimate: the
     // estimate is what was bid, the projection is what the job is now expected
     // to cost, and progress against a stale bid reads as further along than it is.

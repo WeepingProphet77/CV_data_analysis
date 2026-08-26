@@ -32,11 +32,14 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
       area,
       jobsWithSf: withSf.length,
       jobsWithoutSf: jobs.length - withSf.length,
-      budgetPerSf: sfCost((j) => j.totals.estCost, area.est),
-      forecastPerSf: sfCost((j) => j.totals.projCost, area.proj),
-      actualPerSf: sfCost((j) => j.totals.actCost, area.act),
-      contractPerSf: sfCost((j) => j.netContract, area.proj),
-      marginPerSf: sfCost((j) => j.estOhProfit, area.proj),
+      // Every rate over the same denominator — the job square footage — so
+      // budget, forecast and actual can be read against each other.
+      budgetPerSf: sfCost((j) => j.totals.estCost, area.job),
+      forecastPerSf: sfCost((j) => j.totals.projCost, area.job),
+      actualPerSf: sfCost((j) => j.totals.actCost, area.job),
+      contractPerSf: sfCost((j) => j.netContract, area.job),
+      marginPerSf: sfCost((j) => j.estOhProfit, area.job),
+      sfComplete: area.job > 0 ? area.act / area.job : null,
       contract,
       billed: s((j) => j.amountBilled),
       actual: s((j) => j.totals.actCost),
@@ -54,7 +57,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
     for (const j of jobs) {
       const p = m.get(j.plant) || {
         plant: j.plant, jobs: 0, contract: 0, projected: 0, actual: 0, billed: 0, variance: 0,
-        sfEst: 0, sfProj: 0, sfAct: 0, sfJobs: 0, sfContract: 0, sfProjCost: 0, sfActCost: 0,
+        sfJob: 0, sfAct: 0, sfJobs: 0, sfContract: 0, sfEstCost: 0, sfProjCost: 0, sfActCost: 0,
       };
       p.jobs++; p.contract += j.netContract; p.projected += j.totals.projCost;
       p.actual += j.totals.actCost; p.billed += j.amountBilled;
@@ -64,8 +67,9 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
       // Only jobs carrying footage contribute to either side of a $/SF rate.
       if (j.sf.hasSf) {
         p.sfJobs++;
-        p.sfEst += j.sf.est; p.sfProj += j.sf.proj; p.sfAct += j.sf.act;
-        p.sfContract += j.netContract; p.sfProjCost += j.totals.projCost; p.sfActCost += j.totals.actCost;
+        p.sfJob += j.sf.job; p.sfAct += j.sf.act;
+        p.sfContract += j.netContract;
+        p.sfEstCost += j.totals.estCost; p.sfProjCost += j.totals.projCost; p.sfActCost += j.totals.actCost;
       }
       m.set(j.plant, p);
     }
@@ -74,9 +78,10 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
         ...p,
         margin: p.contract - p.projected,
         marginPct: p.contract > 0 ? (p.contract - p.projected) / p.contract : 0,
-        contractPerSf: p.sfProj > 0 ? p.sfContract / p.sfProj : null,
-        forecastPerSf: p.sfProj > 0 ? p.sfProjCost / p.sfProj : null,
-        actualPerSf: p.sfAct > 0 ? p.sfActCost / p.sfAct : null,
+        contractPerSf: p.sfJob > 0 ? p.sfContract / p.sfJob : null,
+        budgetPerSf: p.sfJob > 0 ? p.sfEstCost / p.sfJob : null,
+        forecastPerSf: p.sfJob > 0 ? p.sfProjCost / p.sfJob : null,
+        actualPerSf: p.sfJob > 0 ? p.sfActCost / p.sfJob : null,
       }))
       .sort((a, b) => b.contract - a.contract);
   }, [jobs]);
@@ -131,15 +136,19 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
         <Panel title="Cost per square foot">
           <div className="cards">
             <StatCard label="Contract / SF" value={perSf(t.contractPerSf)} sub="revenue per foot" />
-            <StatCard label="Budget / SF" value={perSf(t.budgetPerSf)} sub={`Est Cost over ${sqft(t.area.est)}`} />
-            <StatCard label="Forecast / SF" value={perSf(t.forecastPerSf)} sub={`Projections over ${sqft(t.area.proj)}`} />
-            <StatCard label="Actual / SF" value={perSf(t.actualPerSf)} sub={`booked over ${sqft(t.area.act)} to date`} />
+            <StatCard label="Budget / SF" value={perSf(t.budgetPerSf)} sub="Est Cost per foot" />
+            <StatCard label="Forecast / SF" value={perSf(t.forecastPerSf)} sub="projected cost per foot" />
+            <StatCard label="Actual / SF" value={perSf(t.actualPerSf)} sub="spent per foot so far" />
             <StatCard label="Margin / SF" value={perSf(t.marginPerSf)} sub="Est. OH & Profit per foot" small />
+            <StatCard label="Job Square Feet" value={sqft(t.area.job)}
+                      sub={t.sfComplete == null ? "—" : `${ratio(t.sfComplete)} cast to date`} small />
           </div>
           <p className="hint" style={{ marginTop: 10 }}>
-            Each rate divides a cost by the footage measured at the same stage, so none of them mixes a
-            forecast cost with an as-built area. <strong>Actual / SF runs high early</strong> — engineering and
-            materials book before any panel is cast — and settles toward the forecast as production catches up.
+            All four rates divide by the same denominator — <strong>the job square footage</strong>
+            ({sqft(t.area.job)}), not the area cast so far — so they read against each other directly:
+            contracted at {perSf(t.contractPerSf)}, budgeted at {perSf(t.budgetPerSf)}, now forecast at{" "}
+            {perSf(t.forecastPerSf)}, with {perSf(t.actualPerSf)} spent. Actual rises toward forecast as the
+            job completes.
           </p>
           {t.jobsWithoutSf > 0 && (
             <p className="hint">
@@ -225,9 +234,10 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                 <th className="num">Actual Cost</th><th className="num">Projected Cost</th>
                 <th className="num">Variance</th>
                 <th className="num">Est. OH &amp; Profit</th><th className="num">Margin</th>
-                <th className="num" title="Net contract per forecast square foot">Contract /SF</th>
-                <th className="num" title="Projected cost per forecast square foot">Forecast /SF</th>
-                <th className="num" title="Cost booked to date per square foot produced to date">Actual /SF</th>
+                <th className="num" title="All /SF columns divide by the job square footage">Contract /SF</th>
+                <th className="num">Budget /SF</th>
+                <th className="num">Forecast /SF</th>
+                <th className="num">Actual /SF</th>
               </tr>
             </thead>
             <tbody>
@@ -245,6 +255,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                   <td className="num">{p.contractPerSf == null
                     ? <span className="muted" title="This plant's report carries no square footage">—</span>
                     : perSf(p.contractPerSf)}</td>
+                  <td className="num">{p.budgetPerSf == null ? <span className="muted">—</span> : perSf(p.budgetPerSf)}</td>
                   <td className="num">{p.forecastPerSf == null ? <span className="muted">—</span> : perSf(p.forecastPerSf)}</td>
                   <td className="num">{p.actualPerSf == null ? <span className="muted">—</span> : perSf(p.actualPerSf)}</td>
                 </tr>
@@ -262,6 +273,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                 <td className="num">{money(t.margin)}</td>
                 <td className="num">{ratio(t.marginPct)}</td>
                 <td className="num">{perSf(t.contractPerSf)}</td>
+                <td className="num">{perSf(t.budgetPerSf)}</td>
                 <td className="num">{perSf(t.forecastPerSf)}</td>
                 <td className="num">{perSf(t.actualPerSf)}</td>
               </tr>

@@ -22,7 +22,8 @@ export default function Jobs({ jobs, onOpenJob, mine }) {
       actCost: j.totals.actCost,
       curMo: j.totals.curMo,
       margin: j.estOhProfit,
-      sfProj: j.sf.proj,
+      sfJob: j.sf.job,
+      budgetPerSf: j.perSf.budget,
       contractPerSf: j.contractPerSf,
       forecastPerSf: j.perSf.forecast,
       actualPerSf: j.perSf.actual,
@@ -55,6 +56,7 @@ export default function Jobs({ jobs, onOpenJob, mine }) {
             <SortableTh column="margin" label="Est. OH & Profit" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="marginPct" label="Margin" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="contractPerSf" label="Contract /SF" sort={sort} onSort={onSort} align="right" />
+            <SortableTh column="budgetPerSf" label="Budget /SF" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="forecastPerSf" label="Forecast /SF" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="actualPerSf" label="Actual /SF" sort={sort} onSort={onSort} align="right" />
           </tr>
@@ -83,6 +85,7 @@ export default function Jobs({ jobs, onOpenJob, mine }) {
               <td className="num">{r.contractPerSf == null
                 ? <span className="muted" title="This job reports no square footage">—</span>
                 : perSf(r.contractPerSf)}</td>
+              <td className="num">{r.budgetPerSf == null ? <span className="muted">—</span> : perSf(r.budgetPerSf)}</td>
               <td className="num">{r.forecastPerSf == null ? <span className="muted">—</span> : perSf(r.forecastPerSf)}</td>
               <td className="num">{r.actualPerSf == null ? <span className="muted">—</span> : perSf(r.actualPerSf)}</td>
             </tr>

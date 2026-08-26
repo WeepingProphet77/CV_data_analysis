@@ -194,10 +194,12 @@ export function engineeringRollup(jobs, costs, quantities) {
       piecesEst, piecesProj, piecesAct, designPct, hasPieces: piecesProj > 0,
       // Engineering cost per square foot -- the same denominator the business
       // is judged on, applied to the D&E slice. Null when the job reports none.
-      sf: j.sf || { est: 0, proj: 0, act: 0, hasSf: false },
-      perSfBudget: perSf(t.estCost, j.sf?.est),
-      perSfForecast: perSf(t.projCost, j.sf?.proj),
-      perSfActual: perSf(t.actCost, j.sf?.act),
+      sf: j.sf || { est: 0, proj: 0, act: 0, job: 0, hasSf: false },
+      // Same denominator as everywhere else: the job's square footage, not the
+      // area cast so far, so budget and actual compare directly.
+      perSfBudget: perSf(t.estCost, j.sf?.job),
+      perSfForecast: perSf(t.projCost, j.sf?.job),
+      perSfActual: perSf(t.actCost, j.sf?.job),
       jobPct,
       // Design trailing the job's overall spend by more than 10 points is the
       // signal an engineering lead wants surfaced, not buried in a column.
@@ -291,8 +293,8 @@ export function engineeringRollup(jobs, costs, quantities) {
         // is not diluted by jobs (all of Monroeville) that report none.
         const withSf = jobs.filter((j) => j.sf?.hasSf && linesByJob.has(j.key));
         const area = withSf.reduce(
-          (a, j) => ({ est: a.est + j.sf.est, proj: a.proj + j.sf.proj, act: a.act + j.sf.act }),
-          { est: 0, proj: 0, act: 0 }
+          (a, j) => ({ job: a.job + j.sf.job, act: a.act + j.sf.act }),
+          { job: 0, act: 0 }
         );
         const cost = withSf.reduce(
           (a, j) => {
@@ -304,9 +306,9 @@ export function engineeringRollup(jobs, costs, quantities) {
         return {
           sfJobs: withSf.length,
           sfArea: area,
-          perSfBudget: perSf(cost.est, area.est),
-          perSfForecast: perSf(cost.proj, area.proj),
-          perSfActual: perSf(cost.act, area.act),
+          perSfBudget: perSf(cost.est, area.job),
+          perSfForecast: perSf(cost.proj, area.job),
+          perSfActual: perSf(cost.act, area.job),
         };
       })(),
       hoursAgreement: hoursAgreement(deLines),

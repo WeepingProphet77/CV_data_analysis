@@ -14,7 +14,7 @@ import {
 } from "../src/modules/job-cost/parse.js";
 import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/categories.js";
 import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
-import { isSquareFeetRow, isPieceRow, squareFeetFor, perSf, ratesFor } from "../src/modules/job-cost/squarefeet.js";
+import { isSquareFeetRow, isPieceRow, squareFeetFor, perSf, ratesFor, jobSquareFeet } from "../src/modules/job-cost/squarefeet.js";
 import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
 import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
 import {
@@ -133,6 +133,10 @@ console.log("\nSquare feet");
     Q("ARCHITECTURAL (PCS)", 40, 44, 20),   // must not be added in
   ]);
   eq("area sums across products", [sf.est, sf.proj, sf.act], [1500, 1700, 1100]);
+  // The denominator is how big the job *is*, not how much has been cast.
+  eq("job square footage is the forecast area", sf.job, 1700);
+  eq("it falls back to the estimate when there is no forecast",
+     jobSquareFeet({ est: 900, proj: 0, act: 100 }), 900);
   eq("pieces are excluded", sf.byProduct.length, 2);
   eq("the (SQ FT) suffix is stripped for display", sf.byProduct[0].product, "ARCHITECTURAL");
   ok("byProduct is ranked by forecast area", sf.byProduct[0].proj >= sf.byProduct[1].proj);
@@ -142,8 +146,16 @@ console.log("\nSquare feet");
   eq("no footage means no rate, not a zero rate", perSf(1000, 0), null);
   eq("a rate divides cost by area", perSf(1000, 100), 10);
 
-  const rates = ratesFor({ estCost: 1500, projCost: 1700, actCost: 550 }, sf);
-  eq("each rate uses its own stage's area", [rates.budget, rates.forecast, rates.actual], [1, 1, 0.5]);
+  const rates = ratesFor({ estCost: 1700, projCost: 3400, actCost: 1700 }, sf);
+  // All three over the same 1,700 SF, so they are directly comparable.
+  eq("every rate divides by the job square footage",
+     [rates.budget, rates.forecast, rates.actual], [1, 2, 1]);
+  // The one exception, kept because it answers a different question.
+  eq("as-bid uses the area estimated at bid time", rates.asBid, 1700 / 1500);
+  // The invariant that proves the denominator is shared: actual over forecast
+  // must equal cost progress. It cannot hold if the rates divide differently.
+  ok("actual/forecast equals cost progress",
+     Math.abs(rates.actual / rates.forecast - 1700 / 3400) < 1e-9);
   const noRates = ratesFor({ estCost: 1500, projCost: 1700, actCost: 550 }, none);
   eq("every rate is null without footage", [noRates.budget, noRates.forecast, noRates.actual], [null, null, null]);
 }
@@ -157,11 +169,15 @@ console.log("\nJob derivation");
   const qty = [{ stage: "PROD", jobKey: "P|1", product: "ARCHITECTURAL (SQ FT)", estQty: 1000, projQty: 1000, actQty: 500 }];
   const d = deriveJob(job, qty);
   eq("footage is attached", [d.sf.est, d.sf.proj, d.sf.act], [1000, 1000, 500]);
+  eq("job square footage is attached", d.sf.job, 1000);
   eq("budget per foot", d.perSf.budget, 90);
   eq("forecast per foot", d.perSf.forecast, 80);
-  eq("actual per foot uses area produced to date", d.perSf.actual, 80);
+  // 40,000 spent over the job's 1,000 SF -- not over the 500 cast so far,
+  // which would read 80 and wrongly suggest the job was already at forecast.
+  eq("actual per foot uses the job square footage", d.perSf.actual, 40);
   eq("contract per foot", d.contractPerSf, 100);
   eq("margin per foot", d.marginPerSf, 20);
+  eq("area cast is reported separately as progress", d.sfComplete, 0.5);
   eq("cost progress is against the projection", d.costProgress, 0.5);
 
   const bare = deriveJob(job, undefined);
@@ -444,6 +460,21 @@ if (existsSync(REAL_DIR)) {
                               .every((v) => v === null || Number.isFinite(v))));
     ok("$/SF: area never includes piece rows",
        withSf.every((j) => j.sf.byProduct.every((b) => !/PCS/i.test(b.product))));
+    // With one denominator, the ratio of the actual rate to the forecast rate
+    // must equal cost progress exactly. Any drift means a rate is dividing by
+    // something else.
+    ok("$/SF: actual over forecast equals cost progress", (() => {
+      const S = (f) => withSf.reduce((a, j) => a + f(j), 0);
+      const area = S((j) => j.sf.job);
+      if (!(area > 0)) return false;
+      const rateRatio = (S((j) => j.totals.actCost) / area) / (S((j) => j.totals.projCost) / area);
+      const progress = S((j) => j.totals.actCost) / S((j) => j.totals.projCost);
+      return Math.abs(rateRatio - progress) < 1e-9;
+    })());
+    ok("$/SF: no rate divides by the area cast to date", (() => {
+      const j = withSf.find((x) => x.sf.act > 0 && Math.abs(x.sf.act - x.sf.job) > 1);
+      return !j || Math.abs(j.perSf.actual - j.totals.actCost / j.sf.act) > 1e-9;
+    })());
     ok("$/SF: rates land in a plausible range for precast",
        (() => {
          const S = (f) => withSf.reduce((a, j) => a + f(j), 0);
