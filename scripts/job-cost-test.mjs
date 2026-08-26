@@ -17,7 +17,7 @@ import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "..
 import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
 import {
   disciplineOf, isInHouse, inRateBand, estIsHours, actIsHours, isLumpSum,
-  blendedRate, engineeringRollup, RATE_BAND,
+  blendedRate, engineeringRollup, hoursAgreement, varianceToBudget, forecastShift, RATE_BAND,
 } from "../src/modules/job-cost/engineering.js";
 import { money, moneyCompact, ratio } from "../src/core/format.js";
 import productionSchema from "../src/modules/production/schema.js";
@@ -148,19 +148,37 @@ ok("the band excludes just above the top real rate", !inRateBand(RATE_BAND.max *
 eq("blended rate divides totals", blendedRate(10000, 200), 50);
 eq("blended rate with no hours is zero, not Infinity", blendedRate(10000, 0), 0);
 
+console.log("\nHours reliability");
+{
+  const L = (code, estQty, estCost, actQty, actCost) => ({ code, estQty, estCost, actQty, actCost });
+  // Same rate both sides -- the reading holds.
+  const agreeing = L("60.120", 100, 5200, 200, 10400);
+  // Estimated at $52/hr but booking at $161/hr: quantities on both sides, but
+  // they cannot both be hours at a standard rate.
+  const disagreeing = L("60.220", 100, 5200, 50, 8050);
+  const a = hoursAgreement([agreeing, disagreeing]);
+  eq("both lines carry quantities on each side", a.lines, 2);
+  eq("only the consistent one agrees", a.agree, 1);
+  eq("agreement is reported as a share", a.pct, 0.5);
+  eq("no lines means no false confidence", hoursAgreement([]).pct, 0);
+}
+
 console.log("\nEngineering rollup");
 {
   const job = { key: "P|1", jobNo: "1", jobTitle: "T", plant: "P", totals: { actCost: 500, projCost: 1000 } };
-  const L = (code, estQty, estCost, actQty, actCost) => ({
+  // projCost is given separately from estCost: the forecast differs from the
+  // original estimate on 86% of real D&E lines, and the two variances are only
+  // distinguishable when it does.
+  const L = (code, estQty, estCost, projCost, actQty, actCost) => ({
     section: "D&E", jobKey: "P|1", jobNo: "1", plant: "P", code, desc: code,
-    estQty, estCost, projCost: estCost, curMo: 0, actQty, actCost,
-    variance: estCost - actCost, pctProj: 0,
+    estQty, estCost, projCost, curMo: 0, actQty, actCost,
+    variance: projCost - actCost, pctProj: 0,
   });
   const costs = [
-    L("60.120", 100, 5200, 150, 7800),        // drafting at $52/hr, 50 hrs over
-    L("60.220", 100, 6900, 80, 5520),         // engineering at $69/hr, under
-    L("60.700", 1, 50000, 1, 40000),          // outsourced lump sum
-    L("60.220", 1, 200000, 2, 300000),        // lump sum booked to a labor code
+    L("60.120", 100, 5200, 8000, 150, 7800),      // drafting at $52/hr, forecast raised
+    L("60.220", 100, 6900, 6000, 80, 5520),       // engineering at $69/hr, forecast cut
+    L("60.700", 1, 50000, 45000, 1, 40000),       // outsourced lump sum
+    L("60.220", 1, 200000, 310000, 2, 300000),    // lump sum booked to a labor code
   ];
   const qty = [{ stage: "D&E", jobKey: "P|1", product: "ARCH", estQty: 100, projQty: 120, actQty: 60 }];
   const r = engineeringRollup([job], costs, qty);
@@ -170,6 +188,7 @@ console.log("\nEngineering rollup");
   eq("blended actual rate ignores lump sums", Math.round(t.rateAct), 58);
   eq("blended estimate rate ignores lump sums", Math.round(t.rateEst), 61);
   eq("cost totals include everything", t.actCost, 353320);
+  eq("budget and forecast are tracked apart", [t.estCost, t.projCost], [262100, 369000]);
   eq("the lump-sum line is reported, not dropped", [r.lumpSum.length, t.lumpSumLines], [1, 1]);
   eq("outsourced is measured", t.outsourcedAct, 40000);
   eq("design progress comes from the D&E quantity rows", Math.round(t.designPct * 100), 50);
@@ -177,6 +196,21 @@ console.log("\nEngineering rollup");
   eq("design lag compares design against the whole job's spend", Math.round(r.byJob[0].designLag * 100), 0);
   eq("disciplines present", r.byDiscipline.map((d) => d.id), ["drafting", "engineering", "outsourced"]);
   ok("a job with no D&E is left out", engineeringRollup([job], [], []).byJob.length === 0);
+
+  /*
+   * The report carries two budgets. Variance to *forecast* is its own column;
+   * variance to *budget* is derived here and must be labelled as such, so the
+   * two are asserted to be different numbers rather than aliases.
+   */
+  eq("variance to budget is Est Cost less Actual", t.varToBudget, t.estCost - t.actCost);
+  eq("forecast shift is Projections less Est Cost", t.forecastShift, t.projCost - t.estCost);
+  ok("the two variances are distinct measures", t.varToBudget !== t.variance);
+  eq("per-job variance to budget sums to the total",
+     r.byJob.reduce((a, j) => a + j.varToBudget, 0), t.varToBudget);
+  eq("per-discipline variance to budget sums to the total",
+     r.byDiscipline.reduce((a, d) => a + d.varToBudget, 0), t.varToBudget);
+  eq("helpers agree with the roll-up",
+     [varianceToBudget(t), forecastShift(t)], [t.varToBudget, t.forecastShift]);
 
   // Variance must survive to every total line.
   const lineVar = costs.reduce((a, c) => a + c.variance, 0);

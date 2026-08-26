@@ -67,6 +67,23 @@ export const isLumpSum = (line) =>
 
 const SUM_KEYS = ["estCost", "projCost", "curMo", "actCost", "variance"];
 
+/**
+ * The report carries two budgets and only computes variance against one.
+ *
+ *   Est Cost (col D)          the original estimate
+ *   Projections Total (col E) the current forecast — differs from Est Cost on
+ *                             86% of D&E lines, revised up on 157 and down on 98
+ *   Act Cost (col I)          booked to date
+ *   Variance (col K)          Projections Total − Act Cost   <- the report's own
+ *
+ * Variance against the *original estimate* is not a column; it is derived here
+ * and labelled as derived wherever it is shown, so it is never mistaken for a
+ * figure the report states. `forecastShift` is how far the forecast has moved
+ * off the estimate, which is the budget story the report never totals.
+ */
+export const varianceToBudget = (t) => t.estCost - t.actCost;
+export const forecastShift = (t) => t.projCost - t.estCost;
+
 const emptyTotals = () => {
   const t = {
     hoursEst: 0, hoursAct: 0,
@@ -100,6 +117,24 @@ const safeRatio = (a, b) => (b > 0 ? a / b : 0);
  * `costs` and `quantities` may cover more jobs than `jobs` does — they are
  * filtered to the given jobs here, so a caller can always pass the full set.
  */
+/**
+ * How far the "Qty is hours" reading can be trusted.
+ *
+ * On a line carrying quantities on both sides, the estimated and actual rates
+ * should be close if both really are hours at a standard rate. Across the real
+ * reports only about half agree within 15%, so the figure is shown alongside
+ * the hours rather than left for the reader to discover.
+ */
+export function hoursAgreement(lines, tolerance = 0.15) {
+  const both = lines.filter((l) => estIsHours(l) && actIsHours(l));
+  const agree = both.filter((l) => {
+    const est = l.estCost / l.estQty;
+    const act = l.actCost / l.actQty;
+    return est > 0 && Math.abs(est - act) / est <= tolerance;
+  });
+  return { lines: both.length, agree: agree.length, pct: both.length ? agree.length / both.length : 0 };
+}
+
 export function engineeringRollup(jobs, costs, quantities) {
   const jobKeys = new Set(jobs.map((j) => j.key));
   const deLines = costs.filter((c) => c.section === "D&E" && jobKeys.has(c.jobKey));
@@ -141,6 +176,10 @@ export function engineeringRollup(jobs, costs, quantities) {
       key: j.key, jobNo: j.jobNo, jobTitle: j.jobTitle, plant: j.plant,
       estCost: t.estCost, projCost: t.projCost, actCost: t.actCost,
       curMo: t.curMo, variance: t.variance,
+      varToBudget: varianceToBudget(t),
+      forecastShift: forecastShift(t),
+      pctBudget: safeRatio(t.actCost, t.estCost),
+      overBudget: t.estCost > 0 && t.actCost > t.estCost,
       pctProj: costPct,
       hoursEst: t.hoursEst, hoursAct: t.hoursAct,
       hoursVariance: t.hoursEst - t.hoursAct,
@@ -175,6 +214,8 @@ export function engineeringRollup(jobs, costs, quantities) {
       return {
         id, label: DISCIPLINES[id].label, lines: lines.length,
         estCost: t.estCost, projCost: t.projCost, actCost: t.actCost, variance: t.variance,
+        varToBudget: varianceToBudget(t), forecastShift: forecastShift(t),
+        pctBudget: safeRatio(t.actCost, t.estCost),
         hoursEst: t.hoursEst, hoursAct: t.hoursAct,
         rateEst: blendedRate(t.hourlyEstCost, t.hoursEst),
         rateAct: blendedRate(t.hourlyActCost, t.hoursAct),
@@ -203,6 +244,8 @@ export function engineeringRollup(jobs, costs, quantities) {
     .map((r) => ({
       ...r,
       pctProj: safeRatio(r.actCost, r.projCost),
+      varToBudget: varianceToBudget(r),
+      forecastShift: forecastShift(r),
       rateEst: blendedRate(r.hourlyEstCost, r.hoursEst),
       rateAct: blendedRate(r.hourlyActCost, r.hoursAct),
     }))
@@ -219,7 +262,10 @@ export function engineeringRollup(jobs, costs, quantities) {
     totals: {
       estCost: totals.estCost, projCost: totals.projCost, actCost: totals.actCost,
       curMo: totals.curMo, variance: totals.variance,
+      varToBudget: varianceToBudget(totals),
+      forecastShift: forecastShift(totals),
       pctProj: safeRatio(totals.actCost, totals.projCost),
+      pctBudget: safeRatio(totals.actCost, totals.estCost),
       hoursEst: totals.hoursEst, hoursAct: totals.hoursAct,
       hoursVariance: totals.hoursEst - totals.hoursAct,
       rateEst: blendedRate(totals.hourlyEstCost, totals.hoursEst),
@@ -232,6 +278,7 @@ export function engineeringRollup(jobs, costs, quantities) {
       rework: deLines.filter((l) => /REWORK/i.test(l.desc)).reduce((s, l) => s + l.actCost, 0),
       jobs: byJob.length,
       jobsWithPieces: byJob.filter((j) => j.hasPieces).length,
+      hoursAgreement: hoursAgreement(deLines),
     },
   };
 }

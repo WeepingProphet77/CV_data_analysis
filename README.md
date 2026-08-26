@@ -71,11 +71,14 @@ misread.
 - **Portfolio** — contract, billing, cost and margin across every loaded plant;
   jobs bucketed by the margin they are forecast to finish at; the jobs under 10%;
   cost broken down by section and category; a per-plant table.
-- **Drafting & Eng** — the engineering view. Hours booked against estimate by
-  project and by discipline, the blended labor rate, pieces designed, which jobs
-  are over their hour budget, and which are being *designed* more slowly than the
-  job is spending — the last one being the list worth reading first. Works best
-  with My Projects on.
+- **Drafting & Eng** — the engineering view, in budget / cost / variance terms.
+  The report carries two budgets — the original `Est Cost` and the current
+  `Projections Total`, which differ on most lines — so both are shown, along with
+  variance against each. The one against the forecast is the report's own column;
+  the one against the original estimate is derived and labelled as such. Also:
+  pieces designed, and which jobs are being *designed* more slowly than the job is
+  spending, which is the list worth reading first. Hours and rates sit below the
+  money, with a note on how far they can be trusted. Works best with My Projects on.
 - **Jobs** — every active job, sortable on any column: contract, % billed,
   projected and actual cost, cost progress, and projected margin.
 - **Cost Codes** — every cost code rolled up *across* jobs, with the codes running

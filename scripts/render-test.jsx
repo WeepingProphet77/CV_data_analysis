@@ -305,6 +305,25 @@ if (engPaths < 8) {
   }
 }
 
+// An unresolved template placeholder is valid JSX and renders silently as
+// literal text, so nothing above would catch it. Every rendered view is checked
+// for one.
+{
+  const leaks = cases
+    .map(([name, el, opts = {}]) => {
+      let html = "";
+      try { html = renderToString(el); } catch { return null; }
+      return /\$\{|\{'\{'\}/.test(html) ? name : null;
+    })
+    .filter(Boolean);
+  if (leaks.length) {
+    failures++;
+    console.log(`FAIL   no unresolved template placeholders (${leaks.join(", ")})`);
+  } else {
+    console.log("  ok   no unresolved template placeholders");
+  }
+}
+
 const jcJoin = renderToString(<JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />);
 if (!jcJoin.includes("50101") || jcJoin.includes("No job number appears in both")) {
   failures++;

@@ -872,7 +872,25 @@ A role dashboard over the D&E section (60.x) plus the D&E quantity rows, which
 track *pieces designed*. `engineering.js` holds all of it as plain ESM so the
 tests can import it in node.
 
-**Hours are the point of this tab, and reading them takes care.** On in-house
+**The tab leads with budget, cost and variance** — figures the report states
+outright — and puts hours below them, because hours are an inference.
+
+The report carries **two budgets**, and only computes variance against one:
+
+| Column | Meaning | D&E total |
+|---|---|---|
+| `Est Cost` (D) | the original estimate | $25.88M |
+| `Projections Total` (E) | the current forecast | $30.81M |
+| `Act Cost` (I) | booked to date | $20.70M |
+| `Variance` (K) | **Projections − Actual**, the report's own | $10.11M |
+| — | Est Cost − Actual, **derived here** | $5.18M |
+
+They disagree on **86% of D&E lines** (157 revised up, 98 down), so the choice
+is not cosmetic: D&E is forecast $4.93M *above* its original estimate, which the
+forecast column alone hides. Both are shown, and the derived one is labelled
+derived everywhere it appears — never let it pass as a figure the report states.
+
+**Hours take care, and are deliberately secondary.** On in-house
 labor codes the report's Est/Act **Qty** columns are hours — the implied
 cost-per-unit is quantized to standard rates ($52 drafting, $69 engineering,
 $16–52 checking) across all 126 profiled jobs. On outsourced codes (60.7x) they
@@ -898,6 +916,14 @@ with the implied per-unit figure so the exclusion is auditable.
 The band (`RATE_BAND`, $10–$250/hr) is wide on purpose — real rates top out
 around $69 and excluded lines start above $220, so nothing sits near a boundary
 and the threshold is not sensitive.
+
+**How far to trust hours at all.** The column is headed `Est Qty`, not "Est
+Hours" — reading it as hours is inference. It is sound in aggregate but soft per
+line: of the 57 lines carrying quantities on both sides, only **32 (56%)** have
+an estimated rate within 15% of their actual, and job 43134 estimates
+engineering at $52/unit while booking at $161/unit. `hoursAgreement()` computes
+that share and the UI states it on the hours panel. Do not promote hours above
+the cost figures, and do not quote a single job's hours without checking it.
 
 Two derived measures worth keeping:
 
