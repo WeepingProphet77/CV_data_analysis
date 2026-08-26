@@ -15,6 +15,7 @@ import { useDataset } from "../../core/store.js";
 import { Tabs } from "../../components/ui.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
 import { useJobCostData, useJobCostFilters } from "./useJobCost.js";
+import { useMyProjects, SCOPE_ALL } from "./useMyProjects.js";
 import { categoryOptions } from "./categories.js";
 import SourceLibrary, { SourceDrop } from "./views/SourceLibrary.jsx";
 import Portfolio from "./views/Portfolio.jsx";
@@ -22,6 +23,7 @@ import Jobs from "./views/Jobs.jsx";
 import JobDetail from "./views/JobDetail.jsx";
 import CostCodes from "./views/CostCodes.jsx";
 import ProductionLink from "./views/ProductionLink.jsx";
+import { ScopeToggle, NoProjectsYet } from "./views/MyProjects.jsx";
 
 export default function JobCostModule() {
   const lib = useLibrary("job-cost");
@@ -30,8 +32,9 @@ export default function JobCostModule() {
   // and the module boundary stays intact.
   const production = useDataset("production");
 
+  const mine = useMyProjects();
   const data = useJobCostData(lib.sources);
-  const f = useJobCostFilters(data);
+  const f = useJobCostFilters(data, mine);
   const [tab, setTab] = useState("portfolio");
   const [openJob, setOpenJob] = useState(null);
 
@@ -45,11 +48,14 @@ export default function JobCostModule() {
     [production.rows]
   );
 
-  if (!lib.ready) return null;
+  if (!lib.ready || !mine.ready) return null;
 
   if (!lib.sources.length) return <SourceDrop onSource={lib.upsert} />;
 
   const job = openJob ? data.byJobKey.get(openJob) : null;
+
+  const loadedJobNos = new Set(data.jobs.map((j) => j.jobNo));
+  const missingFromLibrary = mine.memberList.filter((n) => !loadedJobNos.has(n));
 
   // The production module owns its own filter state and takes no deep link, so
   // this hands over the route and nothing more.
@@ -72,6 +78,7 @@ export default function JobCostModule() {
           costs={data.costsByJob.get(job.key) || []}
           quantities={data.qtyByJob.get(job.key) || []}
           production={scheduledJobNos.has(job.jobNo)}
+          mine={mine}
           onBack={() => setOpenJob(null)}
           onOpenProduction={goProduction}
         />
@@ -89,6 +96,7 @@ export default function JobCostModule() {
           />
 
           <FilterBar
+            leading={<ScopeToggle mine={mine} />}
             dimensions={[
               { id: "plant", label: "Plants", value: f.plant, options: f.plants, onChange: f.setPlant },
               { id: "job", label: "Jobs", value: f.job, options: f.jobOptions, onChange: f.setJob },
@@ -105,16 +113,32 @@ export default function JobCostModule() {
             searchPlaceholder={tab === "codes" ? "Search codes and descriptions…" : "Search job number or name…"}
           />
 
-          {tab === "portfolio" && <Portfolio jobs={f.jobs} costs={f.costs} onOpenJob={setOpenJob} />}
-          {tab === "jobs" && <Jobs jobs={f.jobs} onOpenJob={setOpenJob} />}
-          {tab === "codes" && <CostCodes costs={f.codeCosts} jobs={f.scope} search={f.search} onOpenJob={setOpenJob} />}
-          {tab === "production" && (
-            <ProductionLink
-              jobs={f.jobs}
-              qtyByJob={data.qtyByJob}
-              production={production.ready ? production.rows : []}
-              onOpenJob={setOpenJob}
-            />
+          {mine.scope !== SCOPE_ALL && !mine.count ? (
+            <NoProjectsYet onShowAll={() => mine.setScope(SCOPE_ALL)} />
+          ) : (
+            <>
+              {mine.active && missingFromLibrary.length > 0 && (
+                <div className="notice amber">
+                  {missingFromLibrary.length} of your {mine.count} projects{" "}
+                  {missingFromLibrary.length === 1 ? "is" : "are"} not in the loaded reports
+                  ({missingFromLibrary.slice(0, 8).join(", ")}
+                  {missingFromLibrary.length > 8 ? "…" : ""}) — that plant's file may not be
+                  imported. They stay in your list.
+                </div>
+              )}
+
+              {tab === "portfolio" && <Portfolio jobs={f.jobs} costs={f.costs} onOpenJob={setOpenJob} />}
+              {tab === "jobs" && <Jobs jobs={f.jobs} onOpenJob={setOpenJob} mine={mine} />}
+              {tab === "codes" && <CostCodes costs={f.codeCosts} jobs={f.pool} search={f.search} onOpenJob={setOpenJob} />}
+              {tab === "production" && (
+                <ProductionLink
+                  jobs={f.jobs}
+                  qtyByJob={data.qtyByJob}
+                  production={production.ready ? production.rows : []}
+                  onOpenJob={setOpenJob}
+                />
+              )}
+            </>
           )}
         </>
       )}

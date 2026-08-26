@@ -14,6 +14,7 @@ import { csvToRecords } from "../src/core/csv.js";
 import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { libraryKey } from "../src/core/library.js";
+import { prefKey } from "../src/core/persisted.js";
 import { readRecord, writeRecord } from "../src/core/store.js";
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
@@ -113,6 +114,35 @@ const final = await readRecord(libKey, isLibrary);
 ok("removing a plant leaves the others", final.sources.length === sources.length - 1 && !final.sources.some((s) => s.id === target.id));
 
 ok("a dataset record is not mistaken for a library", !isLibrary({ rows: [] }));
+
+/*
+ * My Projects is a *preference*, stored separately from the library on purpose:
+ * clearing imported files must not forget which projects were starred.
+ */
+console.log("\nMy Projects preference");
+const prefsKey = prefKey("job-cost", "my-projects");
+const validPref = (v) =>
+  v != null && Array.isArray(v.members) && v.members.every((m) => typeof m === "string") &&
+  (v.scope === "all" || v.scope === "mine");
+
+await writeRecord(prefsKey, { value: { members: ["50101", "50110"], scope: "mine" } });
+const pref = await readRecord(prefsKey, (v) => v != null && validPref(v.value));
+ok("selection round-trips", pref?.value.members.join() === "50101,50110" && pref.value.scope === "mine");
+ok("preference key is separate from the library key", prefsKey !== libKey);
+
+// Clearing the imported reports must leave the starred list alone — that is
+// the whole reason it is a separate record.
+await writeRecord(libKey, { sources: [] });
+const afterClear = await readRecord(prefsKey, (v) => v != null && validPref(v.value));
+ok("clearing the library keeps the selection", afterClear?.value.members.length === 2);
+
+// A stale or hand-edited record must be rejected rather than crashing a render.
+await writeRecord(prefsKey, { value: { members: [1, 2], scope: "mine" } });
+ok("a malformed member list is rejected",
+   (await readRecord(prefsKey, (v) => v != null && validPref(v.value))) === null);
+await writeRecord(prefsKey, { value: { members: [], scope: "sideways" } });
+ok("an unknown scope is rejected",
+   (await readRecord(prefsKey, (v) => v != null && validPref(v.value))) === null);
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll persistence checks passed.\n`);
 process.exit(failures ? 1 : 0);

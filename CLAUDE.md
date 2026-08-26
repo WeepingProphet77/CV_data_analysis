@@ -104,6 +104,7 @@ src/
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
     store.js                   useDataset — per-module IndexedDB persistence
     library.js                 useLibrary — multi-source persistence (see §13)
+    persisted.js               usePersistedState — one small saved preference
     palette.js                 the 8 validated categorical series colors + colorMapFor
     format.js                  fmt / pct / compact / date helpers
     hooks.js                   useSize (ResizeObserver)
@@ -816,6 +817,7 @@ cost report loaded.
 | `Jobs.jsx` | **Jobs** | The sortable job table — every column sorts, which is the main way in. |
 | `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
 | `ProductionLink.jsx` | **vs Production** | The join above. |
+| `MyProjects.jsx` | (controls) | The star toggle and the All / My Projects switch. |
 | `JobDetail.jsx` | drill-down | The whole report for one job, reproduced. |
 
 `JobDetail` follows the §11 rule: every field is listed whether or not it has a
@@ -835,6 +837,41 @@ from the sheet, and the "show fields that are empty" toggle defaults to **on**.
 - The sample workbooks are **generated in memory** (`scripts/job-cost-sample.mjs`),
   not committed. A real report may never enter the repo (§1), and a binary
   fixture can't be a `samples/*.sample.csv`.
+
+### My Projects
+
+A starred subset of jobs, persisted, with every tab isolated to it.
+
+- **Membership is keyed on the job number**, not the plant-scoped `jobKey`. The
+  number is the project's identity in both systems — it is what the production
+  join matches on — so a star survives a plant's report being re-imported or
+  removed, and survives a job being costed under a different plant.
+- **The selection is a separate storage record from the library**
+  (`cv.analysis.job-cost.my-projects.v1`, via `core/persisted.js`). Clearing the
+  imported reports must not forget what was starred; that is asserted in
+  `test:storage`. Don't fold it into the library record.
+- **The scope narrows the job pool itself**, in `useJobCostFilters`, not per
+  view. A view therefore cannot forget to apply it and show company-wide figures
+  under a "My Projects" heading.
+- **The plant and job pickers list only what the scope can show**, so choosing
+  an option never lands on an unexplained empty view.
+- **The list is never pruned against the loaded data.** A starred job whose
+  plant is not imported is still a project someone picked; dropping it silently
+  would mean re-starring everything whenever a file is removed. The UI reports
+  how many selections aren't currently loaded instead.
+- `scope: "mine"` with an empty list is a dead end, so `active` is false until
+  something is starred, and the tab shows `NoProjectsYet` rather than a blank
+  dashboard. `clearMembers` returns the scope to All for the same reason.
+- Both `lib.ready` and `mine.ready` gate the first render — otherwise a saved
+  "My Projects" choice flashes as "All".
+
+### Completion bars
+
+Every row that closes a group — each section subtotal and the Job Totals row —
+carries the same "% of Proj" figure and bar as the detail lines it closes,
+through the shared `PctCell`. A group with nothing projected shows a dash, not
+0%: an empty projection makes the ratio meaningless rather than zero. Section
+totals are summed once in the `bySection` memo rather than per cell.
 
 ### Not visually verified
 

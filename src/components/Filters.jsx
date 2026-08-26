@@ -7,9 +7,13 @@ import React from "react";
 export function FilterBar({
   range, dateFrom, dateTo, onFrom, onTo,
   dimensions = [], search, onSearch, searchPlaceholder = "Search…", onClear, dirty,
+  leading,
 }) {
   return (
     <div className="filters">
+      {/* Slot for a control the module owns -- a scope switch, a mode toggle --
+          so it sits with the filters instead of in a row of its own. */}
+      {leading}
       {/* Not every dataset has a date axis -- the job cost reports are a
           snapshot, not a series -- so the window is only drawn when a range
           is supplied. */}

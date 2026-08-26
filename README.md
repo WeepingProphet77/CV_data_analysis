@@ -81,7 +81,16 @@ misread.
   next. Jobs present in only one of the two systems are listed rather than hidden.
 - **Job detail** — the whole report for one job: the contract header, every cost
   line grouped as the report groups them, quantity progress, the lines running
-  over, and every field the report carries including the blank ones.
+  over, and every field the report carries including the blank ones. Each group
+  of lines closes with a subtotal carrying the same completion percentage and bar
+  as the lines above it.
+
+**My Projects.** Star any job with the ☆ in the Jobs table or on its detail page,
+then switch the toggle from *All Projects* to *My Projects* — every tab, including
+the charts and the production comparison, narrows to just those jobs. The list is
+saved in your browser and stays exactly as you left it until you add or remove
+something. A starred job whose plant isn't currently loaded stays in the list and
+is reported rather than quietly dropped.
 
 Margin means **Est. OH & Profit** — net contract against *projected* cost, the
 margin a job is expected to finish at. The report's *Net* OH & Profit is contract

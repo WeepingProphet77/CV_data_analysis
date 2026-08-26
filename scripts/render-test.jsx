@@ -37,6 +37,7 @@ import JcJobDetail from "../src/modules/job-cost/views/JobDetail.jsx";
 import JcCostCodes from "../src/modules/job-cost/views/CostCodes.jsx";
 import JcProductionLink from "../src/modules/job-cost/views/ProductionLink.jsx";
 import JcSourceLibrary, { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
+import { StarButton, ScopeToggle, NoProjectsYet } from "../src/modules/job-cost/views/MyProjects.jsx";
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { categoryOf } from "../src/modules/job-cost/categories.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
@@ -103,6 +104,18 @@ const person = distinct(rows, (r) => r.name)[0];
 const job = distinct(rows, (r) => r.job)[0];
 const noop = () => {};
 
+// Stand-ins for the useMyProjects hook: one with a starred job, one empty.
+const jcMine = {
+  ready: true, members: new Set([jcJobs[0].jobNo]), memberList: [jcJobs[0].jobNo], count: 1,
+  scope: "mine", active: true,
+  isMember: (n) => n === jcJobs[0].jobNo, toggle: noop, setScope: noop, clearMembers: noop,
+};
+const jcMineEmpty = {
+  ready: true, members: new Set(), memberList: [], count: 0, scope: "all", active: false,
+  isMember: () => false, toggle: noop, setScope: noop, clearMembers: noop,
+};
+
+
 const cases = [
   // A module returns null until useDataset resolves, and effects never run
   // when server-rendering — so rendering nothing is correct here, not a fault.
@@ -136,9 +149,14 @@ const cases = [
   ["JC / SourceDrop empty", <SourceDrop onSource={noop} />],
   ["JC / SourceLibrary", <JcSourceLibrary sources={jcSources} data={jcData} onSource={noop} onRemove={noop} onClear={noop} persistWarning="" />],
   ["JC / Portfolio", <JcPortfolio jobs={jcJobs} costs={jcCosts} onOpenJob={noop} />],
-  ["JC / Jobs", <JcJobs jobs={jcJobs} onOpenJob={noop} />],
+  ["JC / Jobs", <JcJobs jobs={jcJobs} onOpenJob={noop} mine={jcMineEmpty} />],
+  ["JC / Jobs starred", <JcJobs jobs={jcJobs} onOpenJob={noop} mine={jcMine} />],
+  ["JC / ScopeToggle", <ScopeToggle mine={jcMine} />],
+  ["JC / ScopeToggle empty", <ScopeToggle mine={jcMineEmpty} />],
+  ["JC / StarButton", <StarButton jobNo="50101" on onToggle={noop} />],
+  ["JC / NoProjectsYet", <NoProjectsYet onShowAll={noop} />],
   ["JC / CostCodes", <JcCostCodes costs={jcCosts} jobs={jcJobs} search="" onOpenJob={noop} />],
-  ["JC / JobDetail", <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)} quantities={jcQtyByJob.get(jcJobs[0].key) || []} production onBack={noop} onOpenProduction={noop} />],
+  ["JC / JobDetail", <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)} quantities={jcQtyByJob.get(jcJobs[0].key) || []} production mine={jcMine} onBack={noop} onOpenProduction={noop} />],
   // A job forecast to a loss, and one with no contract at all — every margin
   // and progress figure divides by one of those.
   ["JC / JobDetail loss", <JcJobDetail job={jcLossJob} costs={jcCosts.filter((c) => c.jobKey === jcLossJob.key)} quantities={jcQtyByJob.get(jcLossJob.key) || []} production={false} onBack={noop} onOpenProduction={noop} />],
@@ -147,9 +165,9 @@ const cases = [
   ["JC / vs Production, none loaded", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={[]} onOpenJob={noop} />],
   ["JC / vs Production, no match", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={prodRows} onOpenJob={noop} />],
   ["JC / Portfolio no jobs", <JcPortfolio jobs={[]} costs={[]} onOpenJob={noop} />],
-  ["JC / Jobs no jobs", <JcJobs jobs={[]} onOpenJob={noop} />],
+  ["JC / Jobs no jobs", <JcJobs jobs={[]} onOpenJob={noop} mine={jcMineEmpty} />],
   ["JC / CostCodes no costs", <JcCostCodes costs={[]} jobs={[]} search="" onOpenJob={noop} />],
-  ["JC / Jobs one job", <JcJobs jobs={[jcJobs[0]]} onOpenJob={noop} />],
+  ["JC / Jobs one job", <JcJobs jobs={[jcJobs[0]]} onOpenJob={noop} mine={jcMineEmpty} />],
   // Degenerate inputs: empty and single-row datasets must not throw.
   ["Overview / no rows", <Overview rows={[]} onOpenProject={noop} />],
   ["Cumulative / no rows", <Cumulative rows={[]} />],
@@ -226,6 +244,35 @@ if (groupRows < 4 || groupRows !== subtotals) {
   console.log(`FAIL   job cost grid drew its sections (groups=${groupRows}, subtotals=${subtotals})`);
 } else {
   console.log(`  ok   job cost grid drew its sections  ${groupRows} sections, ${subtotals} subtotals`);
+}
+
+// Every section subtotal and the job total must now carry a completion bar,
+// not just the detail lines.
+const jcBars = (jcDetail.match(/class="minibar"/g) || []).length;
+const jcLines = (jcDetail.match(/class="subtotalrow"/g) || []).length;
+const jcDetailLines = jcCosts.filter((c) => c.jobKey === jcJobs[0].key).filter((c) => c.projCost > 0).length;
+if (jcBars < jcDetailLines + jcLines + 1) {
+  failures++;
+  console.log(`FAIL   subtotals carry completion bars (bars=${jcBars}, lines=${jcDetailLines}, subtotals=${jcLines})`);
+} else {
+  console.log(`  ok   subtotals carry completion bars  ${jcBars} bars over ${jcLines} subtotals + total`);
+}
+
+// My Projects must actually isolate the data, not just re-label it.
+const jcAllHtml = renderToString(<JcJobs jobs={jcJobs} onOpenJob={noop} mine={jcMineEmpty} />);
+const jcMineHtml = renderToString(<JcJobs jobs={jcJobs.filter((j) => jcMine.members.has(j.jobNo))} onOpenJob={noop} mine={jcMine} />);
+const rowsIn = (h) => (h.match(/<tr class="clickable"/g) || []).length;
+if (!(rowsIn(jcMineHtml) === 1 && rowsIn(jcAllHtml) === jcJobs.length && rowsIn(jcAllHtml) > 1)) {
+  failures++;
+  console.log(`FAIL   My Projects narrows the table (all=${rowsIn(jcAllHtml)}, mine=${rowsIn(jcMineHtml)})`);
+} else {
+  console.log(`  ok   My Projects narrows the table    ${rowsIn(jcAllHtml)} jobs -> ${rowsIn(jcMineHtml)}`);
+}
+if (!jcMineHtml.includes("★") || !jcAllHtml.includes("☆")) {
+  failures++;
+  console.log("FAIL   star reflects membership");
+} else {
+  console.log("  ok   star reflects membership");
 }
 
 const jcJoin = renderToString(<JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />);

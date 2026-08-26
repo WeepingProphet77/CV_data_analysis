@@ -5,13 +5,15 @@
 import React, { useMemo } from "react";
 import { SortableTh, useSort, compareBy, Badge, MiniBar } from "../../../components/ui.jsx";
 import { money, ratio } from "../../../core/format.js";
+import { StarButton } from "./MyProjects.jsx";
 
-export default function Jobs({ jobs, onOpenJob }) {
+export default function Jobs({ jobs, onOpenJob, mine }) {
   const [sort, onSort] = useSort("netContract");
 
   const rows = useMemo(
     () => jobs.map((j) => ({
       key: j.key, jobNo: j.jobNo, jobTitle: j.jobTitle, plant: j.plant, asOf: j.asOf,
+      starred: mine.isMember(j.jobNo) ? 1 : 0,
       netContract: j.netContract,
       billed: j.amountBilled,
       pctBilled: j.pctBilled,
@@ -24,7 +26,7 @@ export default function Jobs({ jobs, onOpenJob }) {
       progress: j.costProgress,
       over: j.overProjection,
     })).sort(compareBy(sort.col, sort.dir)),
-    [jobs, sort]
+    [jobs, sort, mine]
   );
 
   if (!rows.length) {
@@ -36,6 +38,7 @@ export default function Jobs({ jobs, onOpenJob }) {
       <table>
         <thead>
           <tr>
+            <SortableTh column="starred" label="★" sort={sort} onSort={onSort} />
             <SortableTh column="jobNo" label="Job #" sort={sort} onSort={onSort} />
             <SortableTh column="jobTitle" label="Job" sort={sort} onSort={onSort} />
             <SortableTh column="plant" label="Plant" sort={sort} onSort={onSort} />
@@ -52,6 +55,7 @@ export default function Jobs({ jobs, onOpenJob }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.key} className="clickable" onClick={() => onOpenJob(r.key)}>
+              <td className="starcol"><StarButton jobNo={r.jobNo} on={Boolean(r.starred)} onToggle={mine.toggle} /></td>
               <td className="muted nowrap">{r.jobNo}</td>
               <td className="link" style={{ maxWidth: 280 }} title={r.jobTitle}>{r.jobTitle || "—"}</td>
               <td className="muted nowrap">{r.plant}</td>

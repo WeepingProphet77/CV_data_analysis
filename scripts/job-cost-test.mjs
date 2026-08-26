@@ -14,6 +14,7 @@ import {
 } from "../src/modules/job-cost/parse.js";
 import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/categories.js";
 import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
+import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
 import { money, moneyCompact, ratio } from "../src/core/format.js";
 import productionSchema from "../src/modules/production/schema.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
@@ -90,6 +91,25 @@ console.log("\nProduction job-number split (the join key)");
   eq("phase-suffixed job number", d("45112P2 - SOMETHING").jobNo, "45112P2");
   eq("P-prefixed job number is not a suffix", d("P10031 - SOMETHING").jobNo, "P10031");
 }
+
+console.log("\nMy Projects selection");
+eq("adding a project", toggleMember([], "50101"), ["50101"]);
+eq("adding a second keeps them sorted", toggleMember(["50110"], "50101"), ["50101", "50110"]);
+eq("numeric sort, not lexical", toggleMember(["50110", "50101"], "5099"), ["5099", "50101", "50110"]);
+eq("toggling an existing project removes it", toggleMember(["50101", "50110"], "50101"), ["50110"]);
+eq("removing the last leaves an empty list", toggleMember(["50101"], "50101"), []);
+eq("an empty job number is ignored", toggleMember(["50101"], ""), ["50101"]);
+// Job numbers are not all numeric -- "P10031" and "42343-IN" are real forms.
+eq("a non-numeric job number stars like any other", toggleMember([], "42343-IN"), ["42343-IN"]);
+eq("toggling is its own inverse", toggleMember(toggleMember(["50110"], "50101"), "50101"), ["50110"]);
+
+ok("a valid selection passes", isValidSelection({ members: ["50101"], scope: SCOPE_MINE }));
+ok("an empty selection is valid", isValidSelection({ members: [], scope: SCOPE_ALL }));
+ok("a non-string member is rejected", !isValidSelection({ members: [50101], scope: SCOPE_ALL }));
+ok("a blank member is rejected", !isValidSelection({ members: [""], scope: SCOPE_ALL }));
+ok("an unknown scope is rejected", !isValidSelection({ members: [], scope: "sideways" }));
+ok("a missing members list is rejected", !isValidSelection({ scope: SCOPE_ALL }));
+ok("null is rejected", !isValidSelection(null));
 
 /* -- Structural parse ---------------------------------------------------- */
 

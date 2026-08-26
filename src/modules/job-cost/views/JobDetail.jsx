@@ -12,6 +12,7 @@ import { BackLink, Panel, Badge, StatCard, MiniBar } from "../../../components/u
 import { money, ratio, fmt, count } from "../../../core/format.js";
 import { JOB_FIELDS, COST_FIELDS } from "../schema.js";
 import { SECTIONS, SECTION_LABELS } from "../categories.js";
+import { StarButton } from "./MyProjects.jsx";
 
 const value = (job, f) => {
   const v = job[f.key];
@@ -25,8 +26,25 @@ const value = (job, f) => {
 /** Sum a measure over a set of cost lines. */
 const sum = (lines, k) => lines.reduce((t, c) => t + c[k], 0);
 
+/**
+ * The "% of Proj" cell, used by detail lines, section subtotals and the job
+ * total alike so a group reads exactly like the lines it closes. A group with
+ * nothing projected has no percentage to show -- an empty projection would make
+ * every ratio infinite, so it shows a dash rather than 0%.
+ */
+function PctCell({ actCost, projCost }) {
+  if (!(projCost > 0)) return <td className="num"><span className="muted">—</span></td>;
+  const p = actCost / projCost;
+  return (
+    <td className="num nowrap">
+      {ratio(p)}
+      <MiniBar value={Math.min(p, 1)} max={1}
+               color={actCost > projCost ? "var(--critical)" : "var(--series-3)"} />
+    </td>
+  );
+}
+
 function CostRow({ c }) {
-  const over = c.projCost > 0 && c.actCost > c.projCost;
   return (
     <tr>
       <td className="muted nowrap">{c.code}</td>
@@ -38,27 +56,25 @@ function CostRow({ c }) {
       <td className="num muted">{c.actQty ? fmt(c.actQty, 0) : "—"}</td>
       <td className="num">{money(c.actCost)}</td>
       <td className="num" style={{ color: c.variance < 0 ? "var(--critical)" : undefined }}>{money(c.variance)}</td>
-      <td className="num nowrap">
-        {c.projCost > 0 ? ratio(c.pctProj) : <span className="muted">—</span>}
-        {c.projCost > 0 && (
-          <MiniBar value={Math.min(c.pctProj, 1)} max={1} color={over ? "var(--critical)" : "var(--series-3)"} />
-        )}
-      </td>
+      <PctCell actCost={c.actCost} projCost={c.projCost} />
     </tr>
   );
 }
 
-export default function JobDetail({ job, costs, quantities, production, onBack, onOpenProduction }) {
+export default function JobDetail({ job, costs, quantities, production, mine, onBack, onOpenProduction }) {
   const [showEmpty, setShowEmpty] = useState(true);
 
   const bySection = useMemo(() => {
     const present = SECTIONS.filter((s) => costs.some((c) => c.section === s));
     const extra = [...new Set(costs.map((c) => c.section))].filter((s) => !SECTIONS.includes(s));
-    return [...present, ...extra].map((s) => ({
-      section: s,
-      label: SECTION_LABELS[s] || s || "Unsectioned",
-      lines: costs.filter((c) => c.section === s).sort((a, b) => a.code.localeCompare(b.code)),
-    }));
+    return [...present, ...extra].map((s) => {
+      const lines = costs.filter((c) => c.section === s).sort((a, b) => a.code.localeCompare(b.code));
+      // Summed once here rather than per cell -- the subtotal row reads five
+      // measures plus a percentage off the same set.
+      const totals = {};
+      for (const k of ["estCost", "projCost", "curMo", "actCost", "variance"]) totals[k] = sum(lines, k);
+      return { section: s, label: SECTION_LABELS[s] || s || "Unsectioned", lines, totals };
+    });
   }, [costs]);
 
   const t = job.totals;
@@ -74,7 +90,10 @@ export default function JobDetail({ job, costs, quantities, production, onBack, 
 
       <div className="topbar" style={{ marginTop: 6 }}>
         <div>
-          <div className="title">{job.jobNo} — {job.jobTitle || "Untitled"}</div>
+          <div className="title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {mine && <StarButton jobNo={job.jobNo} on={mine.isMember(job.jobNo)} onToggle={mine.toggle} size="lg" />}
+            <span>{job.jobNo} — {job.jobTitle || "Untitled"}</span>
+          </div>
           <div className="subtitle">
             {job.plant}{job.asOf ? ` — as of ${job.asOf}` : ""} — {count(costs.length)} cost lines
             {job.sheet && job.sheet !== job.jobNo ? ` — sheet "${job.sheet}"` : ""}
@@ -188,13 +207,13 @@ export default function JobDetail({ job, costs, quantities, production, onBack, 
                   <td />
                   <td>{s.label} subtotal</td>
                   <td className="num" />
-                  <td className="num">{money(sum(s.lines, "estCost"))}</td>
-                  <td className="num">{money(sum(s.lines, "projCost"))}</td>
-                  <td className="num">{money(sum(s.lines, "curMo"))}</td>
+                  <td className="num">{money(s.totals.estCost)}</td>
+                  <td className="num">{money(s.totals.projCost)}</td>
+                  <td className="num">{money(s.totals.curMo)}</td>
                   <td className="num" />
-                  <td className="num">{money(sum(s.lines, "actCost"))}</td>
-                  <td className="num">{money(sum(s.lines, "variance"))}</td>
-                  <td className="num" />
+                  <td className="num">{money(s.totals.actCost)}</td>
+                  <td className="num">{money(s.totals.variance)}</td>
+                  <PctCell actCost={s.totals.actCost} projCost={s.totals.projCost} />
                 </tr>
               </tbody>
             ))}
@@ -207,7 +226,7 @@ export default function JobDetail({ job, costs, quantities, production, onBack, 
                 <td />
                 <td className="num">{money(t.actCost)}</td>
                 <td className="num">{money(t.variance)}</td>
-                <td className="num">{t.projCost > 0 ? ratio(t.actCost / t.projCost) : "—"}</td>
+                <PctCell actCost={t.actCost} projCost={t.projCost} />
               </tr>
             </tfoot>
           </table>
