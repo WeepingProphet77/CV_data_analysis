@@ -24,13 +24,16 @@ function cleanComment(v) {
  * "43134 - 1401 CHURCH STREET" -> { jobNo: "43134", jobTitle: "1401 CHURCH STREET" }
  *
  * Job numbers are not always purely numeric -- the export also carries
- * "P10031", "45112P2", "45166P2" -- so the leading token is alphanumeric.
- * A string with no leading token becomes all title rather than being
- * force-split, so an unexpected format degrades instead of losing the name.
+ * "P10031", "45112P2", "45166P2" -- and some carry an internal dash of their
+ * own ("00-006 - Jacksonville Admin/Stock Job"). The separator is therefore
+ * matched only when it is surrounded by whitespace; an unspaced match would
+ * cut "00-006" in half and collapse it and "00-009" onto the same job number.
+ * A string with no separator becomes all title rather than being force-split,
+ * so an unexpected format degrades instead of losing the name.
  */
 function splitJob(v) {
   const s = String(v ?? "").trim();
-  const m = s.match(/^([A-Za-z0-9]+)\s*-\s*(.+)$/);
+  const m = s.match(/^(\S+)\s+-\s+(.+)$/);
   return m ? { jobNo: m[1], jobTitle: m[2].trim() } : { jobNo: "", jobTitle: s };
 }
 

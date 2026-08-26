@@ -6,6 +6,7 @@
  */
 import EmployeeTimeModule from "./employee-time/index.jsx";
 import ProductionModule from "./production/index.jsx";
+import JobCostModule from "./job-cost/index.jsx";
 import ScheduleModule from "./schedule/index.jsx";
 
 export const MODULES = [
@@ -22,6 +23,13 @@ export const MODULES = [
     blurb: "Scheduled pours by plant — calendar, charts, beds, jobs and pieces.",
     status: "ready",
     Component: ProductionModule,
+  },
+  {
+    id: "job-cost",
+    label: "Job Cost",
+    blurb: "Weekly job cost by plant — contract, billing, projected margin and cost-code overruns.",
+    status: "ready",
+    Component: JobCostModule,
   },
   {
     id: "schedule",

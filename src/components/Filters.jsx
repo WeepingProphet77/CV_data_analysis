@@ -10,12 +10,19 @@ export function FilterBar({
 }) {
   return (
     <div className="filters">
-      <span className="filter-label">From</span>
-      <input className="field" type="date" value={dateFrom || range.min || ""}
-             min={range.min} max={range.max} onChange={(e) => onFrom(e.target.value)} />
-      <span className="filter-label">To</span>
-      <input className="field" type="date" value={dateTo || range.max || ""}
-             min={range.min} max={range.max} onChange={(e) => onTo(e.target.value)} />
+      {/* Not every dataset has a date axis -- the job cost reports are a
+          snapshot, not a series -- so the window is only drawn when a range
+          is supplied. */}
+      {range && (
+        <>
+          <span className="filter-label">From</span>
+          <input className="field" type="date" value={dateFrom || range.min || ""}
+                 min={range.min} max={range.max} onChange={(e) => onFrom(e.target.value)} />
+          <span className="filter-label">To</span>
+          <input className="field" type="date" value={dateTo || range.max || ""}
+                 min={range.min} max={range.max} onChange={(e) => onTo(e.target.value)} />
+        </>
+      )}
 
       {dimensions.map((d) => (
         <label key={d.id} style={{ display: "contents" }}>

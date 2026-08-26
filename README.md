@@ -1,7 +1,8 @@
 # CV Data Analysis
 
 Browser-based analysis dashboards for data exported from **Concrete Vision**, the
-ERP that runs employee time, production and scheduling.
+ERP that runs employee time, production and scheduling — plus the weekly job cost
+reports that come from the company's separate cost system.
 
 **Live:** https://weepingprophet77.github.io/CV_data_analysis/
 
@@ -17,6 +18,7 @@ browser's IndexedDB, so a refresh doesn't mean re-uploading; large exports
 | --- | --- | --- |
 | **Employee Time** | Built | Timesheet hours by person, project, labor task and date. Sortable tables, drill-down on any person or project, and cumulative-hours plots. |
 | **Production** | Built | Scheduled pours by plant — month calendar, charts, bed utilization, jobs and piece detail. |
+| **Job Cost** | Built | Weekly job cost by plant — contract, billing, projected margin, cost-code overruns, and a cost-versus-schedule comparison. |
 | **Schedule** | Placeholder | Scheduled versus actual dates, slip, weekly load. |
 
 ### Employee Time
@@ -57,6 +59,34 @@ these are pours that are *scheduled*, so the UI never claims anything was produc
 Rows with no quantity are kept, not dropped: they are bed activity — mold builds
 and maintenance — and an occupied bed is real schedule information.
 
+### Job Cost
+
+Reads the **Job Cost Report — Active Jobs** workbook, one per plant. Unlike the
+other modules this one keeps a **library**: every plant's report stays loaded, and
+dropping a new file for a plant refreshes just that plant. Plants are exported on
+their own schedules, so the strip shows each one's "as of" date and flags any that
+have fallen behind — a company-wide total that mixes cut-off dates is easy to
+misread.
+
+- **Portfolio** — contract, billing, cost and margin across every loaded plant;
+  jobs bucketed by the margin they are forecast to finish at; the jobs under 10%;
+  cost broken down by section and category; a per-plant table.
+- **Jobs** — every active job, sortable on any column: contract, % billed,
+  projected and actual cost, cost progress, and projected margin.
+- **Cost Codes** — every cost code rolled up *across* jobs, with the codes running
+  over projection flagged. The source system reports per job, so this view is the
+  one thing it can't show you.
+- **vs Production** — joins the cost reports to the scheduled production data on
+  job number, so you can read how far a job has got against what is booked to pour
+  next. Jobs present in only one of the two systems are listed rather than hidden.
+- **Job detail** — the whole report for one job: the contract header, every cost
+  line grouped as the report groups them, quantity progress, the lines running
+  over, and every field the report carries including the blank ones.
+
+Margin means **Est. OH & Profit** — net contract against *projected* cost, the
+margin a job is expected to finish at. The report's *Net* OH & Profit is contract
+less cost booked so far; it falls as a job spends and is not a forecast.
+
 ## Accepted files
 
 `.csv`, `.xlsx` and `.xls`. Column headers are matched case- and
@@ -68,6 +98,11 @@ one and lists the headers it did find.
 Employee Time expects: `Effective Date`, `First Name`, `Last Name`, `Job Name`,
 `Hours` (required), plus `Location`, `GL Code`, `Labor Task`, `Deptment` (optional).
 
+Job Cost is the exception: it is a formatted, multi-sheet workbook rather than a
+table, so it accepts `.xlsx`/`.xls` only and is read by its own parser. It expects
+one worksheet per job, the job number and name in cell A3, and a
+`Task` / `Description` header row. The plant is taken from the filename.
+
 ## Developing
 
 ```bash
@@ -75,12 +110,14 @@ npm install
 npm run dev       # http://localhost:5173
 npm test          # data-layer, persistence and render checks
 npm run build     # production build into dist/
-npm run sample    # regenerate samples/employee-time.sample.csv
+npm run sample    # regenerate the synthetic CSV samples
 npm run deploy    # test, build, publish to the gh-pages branch
 ```
 
 The files in `samples/` are entirely synthetic — fabricated names, plants and job
-numbers — so the dashboard can be demoed and tested without real company data.
+numbers — so the dashboard can be demoed and tested without real company data. The
+job cost fixtures are generated in memory by `scripts/job-cost-sample.mjs`, since a
+multi-sheet workbook can't live in `samples/` as a CSV.
 
 Deploys currently go out with `npm run deploy`, which publishes the build to the
 `gh-pages` branch. Automatic deployment on push to `main` is ready to switch on —

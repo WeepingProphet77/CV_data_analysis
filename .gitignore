@@ -9,6 +9,11 @@ dist/
 *.xlsx
 *.xls
 !samples/*.sample.csv
+
+# The weekly job cost reports, one workbook per plant. The extension rules above
+# already cover them; this belts-and-braces the whole folder so a report saved in
+# some other format can't slip through.
+weekly job costs/
 .render-test/
 
 # Screenshots of the live Concrete Vision UI: they contain real job names,

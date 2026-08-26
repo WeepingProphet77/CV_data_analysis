@@ -9,17 +9,18 @@ commit that changes the code.
 ## 0. Start here
 
 **Read §1 (constraints), §2 (layout) and §7 (testing) before changing anything.**
-If the work touches the production module, read §11 too.
+If the work touches the production module, read §11 too; the job cost
+module, §13.
 
-### State as of 2026-08-24
+### State as of 2026-08-26
 
 | | |
 |---|---|
 | Live site | https://weepingprophet77.github.io/CV_data_analysis/ |
 | Repo | github.com/WeepingProphet77/CV_data_analysis (public) |
-| Modules | **Employee Time** built · **Production** built · **Schedule** placeholder |
+| Modules | **Employee Time** built · **Production** built · **Job Cost** built · **Schedule** placeholder |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
-| Tests | four suites, all passing — `npm test` |
+| Tests | five suites, all passing — `npm test` |
 
 ### Running it
 
@@ -49,6 +50,8 @@ shell may not pick that up, so prefix commands with
 - **Don't drop unmapped export columns** — they are carried as `row.extra` and
   shown in detail views (§4).
 - **Eight categorical colors, never a ninth** (§5).
+- **Job Cost persists a *library*, not a dataset** — one file per plant, each
+  replaceable on its own. Don't "simplify" it back to `useDataset` (§13).
 
 ---
 
@@ -100,6 +103,7 @@ src/
     parse.js                   schema-driven ingest: coercion, column mapping
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
     store.js                   useDataset — per-module IndexedDB persistence
+    library.js                 useLibrary — multi-source persistence (see §13)
     palette.js                 the 8 validated categorical series colors + colorMapFor
     format.js                  fmt / pct / compact / date helpers
     hooks.js                   useSize (ResizeObserver)
@@ -179,6 +183,11 @@ modules/<id>/
 5. Add render cases to `scripts/render-test.jsx`, including empty and
    single-row datasets.
 
+A module that receives **several files that must coexist** — as the job cost
+reports do, one per plant — uses `useLibrary` from `core/library.js` instead of
+`useDataset`, and owns its own strip in place of `<DataBar>`. See §13 before
+reaching for it; a module fed by a single export should stay on `useDataset`.
+
 `schedule` still renders `<ModulePlaceholder>`, which states its intended scope
 and the export columns it is expected to consume. **That column list is a
 guess** — confirm it against a real Concrete Vision export before building it
@@ -192,7 +201,14 @@ out. `production` is being built from a real export; see §11.
 
 - `.csv` goes through `core/csv.js`. `.xlsx`/`.xls` **dynamically import**
   SheetJS, so the ~500KB parser is a separate chunk that a CSV user never
-  downloads. Keep it that way: never add a top-level `import * as XLSX`.
+  downloads. Keep it that way: never add a top-level `import * as XLSX` —
+  including in the job cost module, which reads workbooks only
+  (`job-cost/importFile.js` owns that import, and nothing else in the module
+  touches SheetJS).
+- **Not every export is a flat table.** The job cost report is a formatted,
+  multi-sheet document and has its own walker in `modules/job-cost/parse.js`.
+  If a new export has merged cells, a header block or one sheet per entity,
+  it needs the same treatment — don't force it through the schema mapper (§13).
 - Column matching normalizes headers to lowercase alphanumerics, tries every
   alias, then falls back to substring containment. This is why a header rename
   in Concrete Vision usually needs only a new alias, not new parsing code.
@@ -226,6 +242,11 @@ for browsers with IndexedDB disabled, and anything found under the old key is
 migrated across on first read and then deleted.
 
 Bump `VERSION` in `core/store.js` if the row shape changes incompatibly.
+
+Modules holding **many files at once** use `useLibrary` (`core/library.js`)
+instead, under `cv.analysis.<moduleId>.lib.v1`. It shares `readRecord` /
+`writeRecord` with `useDataset`, so there is one storage path and one fallback
+story — don't fork it. See §13.
 
 Writes are async and deliberately **not** awaited before the data renders — the
 dashboard shows the import immediately and surfaces a warning only if the save
@@ -285,9 +306,10 @@ scanline and bloom overlays — carried over from the original tool.
 ## 7. Testing
 
 ```bash
-npm test                # all four suites; the deploy script gates on this
+npm test                # all five suites; the deploy script gates on this
 npm run test:data       # core/ logic in plain node — fast, no build
 npm run test:production # production schema, derivations, calendar grid
+npm run test:jobcost    # job cost parse + reconciliation (see §13)
 npm run test:storage    # IndexedDB persistence, against fake-indexeddb
 npm run test:render     # server-renders every view against the sample data
 ```
@@ -296,6 +318,14 @@ npm run test:render     # server-renders every view against the sample data
 that file happens to be sitting in the working directory. It is gitignored, so
 CI only ever sees the synthetic sample — but locally it is the check that
 matters most.
+
+`test:jobcost` does the same with the `weekly job costs/` folder, and its
+central assertion is **reconciliation**: for every job, the parsed cost lines
+must sum to the report's own Job Totals row, the totals must agree with the
+header block, and each section banner must equal the sum of its own lines. That
+is what makes the figures trustworthy — a walker that silently mis-classifies a
+row shows up immediately as a total that no longer adds up. All 126 real jobs
+reconcile as of 2026-08-26.
 
 `test:data` covers CSV edge cases (quoted commas, escaped quotes, embedded
 newlines, CRLF, BOM), date and number coercion, column mapping including drifted
@@ -323,7 +353,8 @@ passing `month === null` to the calendar on first render, which threw in Chrome
 too. Treat a render failure as a real defect until proven otherwise.
 
 Where new tests go: `core/` logic → `smoke-test.mjs`; production schema, board
-or calendar logic → `production-test.mjs`; a new view → a case in
+or calendar logic → `production-test.mjs`; job cost parsing, cost-code
+classification or plant aliasing → `job-cost-test.mjs`; a new view → a case in
 `render-test.jsx`, including its empty and single-row states. The harnesses are
 hand-rolled on purpose — no test framework dependency.
 
@@ -410,17 +441,42 @@ Carry these forward; update as they're answered.
       nothing to do unless someone wants it surfaced more prominently.
 - [ ] Does the employee time export include a pay-rate or cost column? If so,
       cost rollups become possible — but decide first whether pay data should
-      live in a browser cache at all.
+      live in a browser cache at all. Note the job cost reports already carry
+      labor dollars per cost code (the 30.x and 40.x codes), so the cheaper
+      question may be whether timesheet hours can be tied to those instead.
 - [ ] Loading two exports covering different date spans currently **replaces**
       the dataset. If merging spans is wanted, it needs a dedupe key (probably
       date + person + job + task). IndexedDB now has the headroom for it.
 - [ ] Very large datasets are held entirely in memory and re-aggregated on every
       filter change. If that gets sluggish, the fix is indexing or a web worker,
       not a smaller dataset — measure before optimizing.
-- [ ] Cross-module analysis (labor hours per unit produced; charged hours versus
-      schedule) is the reason the modules share a core. It needs a story for
-      joining datasets on job name.
-- [ ] No CSV/PNG export from the dashboard yet.
+- [x] ~~Cross-module analysis needs a story for joining datasets on job name~~ —
+      done for cost↔production, 2026-08-26. The key is the job **number**, not
+      the name; see §13. Employee Time still has no join — its `job` field has
+      never been profiled against a real export (§12), so confirm its format
+      before extending the same join to it.
+- [ ] No CSV/PNG export from the dashboard yet. It would be most useful on the
+      Job Cost tabs — a filtered cost-code table is the thing most likely to be
+      wanted in a spreadsheet.
+- [ ] **Job cost reports have no date axis.** Each is a snapshot, so there is no
+      trend: "Current Mo Act" is the only period figure, and it is
+      month-to-date, not weekly. Keeping successive weekly imports would make
+      real burn curves possible — the library already stores one file per plant,
+      so it would need a second key (plant + as-of) and a chart over the series.
+      Worth doing only if someone actually wants the trend.
+- [ ] What are the `-IN` companion jobs (`42343-IN`, `44050-IN`)? They are
+      separate cost jobs, never appear in the production schedule, and their
+      titles carry an `(EX)` suffix — erection/installation contracts, most
+      likely. 11 of the 126 jobs are of this form. They are kept as distinct jobs pending confirmation; if they
+      should roll up into their base job, that is a change to the join in §13.
+- [ ] Monroeville's reports carry **no quantity rows at all** — no D&E/PROD/DELV
+      pieces or square feet. Every other plant has them. Is that a setting in
+      the source system, or does that plant genuinely not track them? Until it
+      is answered, the quantity columns on the "vs Production" tab show "—" for
+      those jobs rather than a misleading zero.
+- [ ] The cost system's plant list is a subset of Concrete Vision's. Jacksonville
+      and Pearland have production but no cost report; confirm whether one
+      exists before assuming those jobs are simply uncosted.
 - [ ] Consider a per-person weekly-hours view (over/under 40) once real data
       confirms how overtime is represented.
 
@@ -623,3 +679,165 @@ state, mirroring `useProductionFilters.js`.
 - `cumulativeSeries` takes a shared date `domain` so every series spans the same
   x range and carries flat across idle days — without it, lines jump
   horizontally past each other and read as though work stopped.
+
+---
+
+## 13. Job Cost module
+
+Built from four real exports profiled 2026-08-26: `<Plant> Job Cost Report -
+Active Jobs.xlsx`, one per plant, in the gitignored `weekly job costs/` folder.
+
+**These come from a different system than Concrete Vision.** Same company, same
+jobs, different reporting tool — which is why nothing here reuses the production
+schema and why the join between them (below) is explicit rather than assumed.
+
+### The export, and why it needs its own parser
+
+It is **not a flat table**, so it does not go through `core/parse.js`. It is a
+*formatted report*: **one worksheet per job**, each laid out identically.
+
+```
+row 1                                        "As of 8/26/2026"
+row 2   "Job Cost Report - Active Jobs"
+row 3   "43134   1401 CHURCH STREET…"        Actual Cost      7,415,439.52
+row 4     Original Contract  12,279,836      Net Contract     Projected Cost
+row 5     Change Orders               0      Amount Billed    Est. OH & Profit  22.1%
+row 6     Net Contract       12,279,836      % Billed 64.56%  Net OH & Profit   39.61%
+row 8   Task | Description | Est Qty | Est Cost | Projections Total |
+        Current Mo Act | Act Qty | | Act Cost | | Variance | % of Proj
+        …section banner, detail lines, "TASK GROUP TOTAL" subtotal, repeat…
+        Job Totals
+        90.100 BUDGET - CONTINGENCY          ← printed *below* the totals
+```
+
+Positions are fixed and were verified across all 126 sheets: the header row is
+always row 8, the header block always occupies rows 1–6 in the columns above.
+`parse.js` walks this explicitly; `COL` names the column indices (7 and 9 are
+spacer columns).
+
+Profile: 4 workbooks, 126 job sheets, 3,448 cost lines, 563 quantity rows.
+Two different "as of" dates were already in play on day one — Hillsboro at
+7/31, the rest at 8/26 — which is the whole reason for §13's library.
+
+### Row taxonomy
+
+Every row in the grid is one of five things, and telling them apart is the
+entire job of the parser:
+
+| Row | How it is recognised | Treatment |
+|---|---|---|
+| **Section banner** | col A ends `TASK GROUP TOTAL` / `TASK GROUPS TOTAL`, or is exactly `OTHER` | Sets the current section; its figures are kept for cross-checking |
+| **Quantity row** | col A is `D&E`, `PROD` or `DELV` | Kept **apart from costs** — see below |
+| **Cost line** | col A matches `NN.NNN` (and one observed `70.000A`) | The data |
+| **Subtotal** | col A empty, col B `TASK GROUP TOTAL` | Ignored — recomputed from the lines |
+| **Job Totals** | col A is `Job Totals` | The job's totals |
+
+**Order matters**: `D&E TASK GROUP TOTAL` starts with a stage prefix, so the
+banner test must run before the quantity test or the section header is read as
+a quantity row. There is a test for exactly this.
+
+### Three things that will produce wrong numbers if you miss them
+
+1. **Quantity rows carry no money.** On a `PROD ARCHITECTURAL (SQ FT)` row the
+   "Projections Total" column holds a *projected quantity* and "Variance" holds
+   a *quantity* variance. Summing those into a cost rollup adds square feet to
+   dollars. They are parsed into a separate `quantities` list for this reason.
+2. **`90.100 BUDGET - CONTINGENCY` sits below the Job Totals row and is excluded
+   from it.** It is held on the job as `contingency`, never in `costs`. The one
+   place it leaks is the `OTHER` section banner, whose *Est Cost* includes it —
+   so `OTHER`'s banner is the single figure that does not equal the sum of its
+   own lines. Every other banner reconciles exactly. That asymmetry is asserted
+   in `job-cost-test.mjs`; it is the report's behaviour, not a parse bug.
+3. **A code number is not a unique key.** The same number carries different work
+   at different plants — `20.600` is "BACKER CEMENT" in 75 sheets and "READY MIX
+   - CONCRETE" in 33; `55.100` has five spellings. The Cost Codes view keys on
+   code **and** description and flags the collisions. Rolling up on the number
+   alone silently adds unlike things together.
+
+### Est. vs Net OH & Profit
+
+Both are in the header block and they are not the same measure. Verified as
+exact identities across all 126 jobs:
+
+- `Est. OH & Profit = Net Contract − Projected Cost` — margin **at completion**.
+  This is the margin figure. Everything in the UI that says "margin" means this.
+- `Net OH & Profit = Net Contract − Actual Cost` — contract less what has been
+  spent *so far*. It starts near 100% and falls as the job spends, so it is not
+  a forecast and must never be presented as one.
+
+Also identities, and tested: `Net Contract = Original + Change Orders`,
+`% Billed = Amount Billed / Net Contract`.
+
+### Persistence: a library, not a dataset
+
+**This is the module's one structural departure.** `useDataset` holds a single
+import and replaces it on upload. Here the reports arrive one per plant, each
+refreshed on its own schedule, so replacing would discard three plants to update
+a fourth. `core/library.js` (`useLibrary`) keeps **one entry per source, keyed
+by plant**; re-importing a plant overwrites just that entry.
+
+- The plant comes from the **filename** — the worksheets carry no plant field.
+- The whole library is one IndexedDB value, so an import is atomic.
+- `store.js` was generalised into `readRecord`/`writeRecord` so both hooks share
+  one storage path with one fallback story. Don't fork it again.
+- Because plants refresh independently, **the library routinely holds more than
+  one cut-off date**. The strip badges any plant older than the newest and the
+  UI says so above the totals. Do not remove that: a company-wide number mixing
+  a 7/31 plant with 8/26 plants is wrong in a way nobody would notice.
+
+### The join to Production
+
+Job **number**, not job name — the two systems write the name differently
+(`"43134 - 1401 CHURCH STREET"` vs `"43134   1401 CHURCH STREET MOTLEY T1"`) but
+agree on the number. Confirmed against real data: 32 of 63 scheduled jobs have a
+cost report loaded.
+
+- **Plants do not correspond one-to-one.** CV splits Hillsboro into `Hillsboro`
+  and `Hillsboro Structural`; the cost system bills one Hillsboro. CV also runs
+  Jacksonville and Pearland, which have no cost report at all. `plants.js` is
+  the **only** place that mapping lives — edit it there, nowhere else.
+- **The two datasets answer different questions.** Cost figures are cumulative
+  **to date**; the production dataset is a **forward** month of scheduled pours.
+  The view shows them side by side and says so; they are never summed.
+- Non-matches are shown, not hidden: "scheduled but not costed" (usually a plant
+  whose report isn't loaded) and "costed but not scheduled" (expected — the
+  schedule covers a month, the cost report covers every active job).
+- Fixing this join turned up a real bug in `production/schema.js`: `splitJob`
+  matched its separator without requiring surrounding spaces, so `00-006` and
+  `00-009` both became job number `"00"` — two distinct admin jobs collapsed
+  onto one key. The regex now requires whitespace around the dash. Tested.
+
+### Views (`modules/job-cost/views/`)
+
+| File | Tab | What it shows |
+|---|---|---|
+| `SourceLibrary.jsx` | (strip) | One row per loaded plant — as-of date, job count, file, remove. Drop target accepts several workbooks at once. Replaces `DataBar` here, which describes a single file. |
+| `Portfolio.jsx` | **Portfolio** | Stat tiles, margin-at-completion bands, jobs under 10% margin, cost by section and category, per-plant table. |
+| `Jobs.jsx` | **Jobs** | The sortable job table — every column sorts, which is the main way in. |
+| `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
+| `ProductionLink.jsx` | **vs Production** | The join above. |
+| `JobDetail.jsx` | drill-down | The whole report for one job, reproduced. |
+
+`JobDetail` follows the §11 rule: every field is listed whether or not it has a
+value, subtotals are **recomputed from the lines on screen** rather than read
+from the sheet, and the "show fields that are empty" toggle defaults to **on**.
+
+### Conventions this module added
+
+- `core/format.js` gained `money`, `moneyCompact` and `ratio`. `ratio` formats a
+  *stored* ratio (0.7752 → "77.5%"); `pct` divides a part by a total. Using the
+  wrong one is off by a factor of the total.
+- `FilterBar`'s date window is now optional — omit `range` and it isn't drawn.
+  A job cost report is a snapshot, not a series.
+- Job-cost styling is scoped under `.jc` in `theme.css`. The numeric columns are
+  right-aligned there; the other modules left-align theirs, and changing that
+  globally would restyle views nobody has looked at.
+- The sample workbooks are **generated in memory** (`scripts/job-cost-sample.mjs`),
+  not committed. A real report may never enter the repo (§1), and a binary
+  fixture can't be a `samples/*.sample.csv`.
+
+### Not visually verified
+
+The whole module was built and tested without anyone looking at it — there is no
+browser automation here (§7). Layout, spacing, colour and interaction need a
+human pass at `npm run dev`.

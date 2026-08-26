@@ -23,12 +23,12 @@ const isDataset = (v) => Array.isArray(v?.rows);
 
 /* -- localStorage fallback --------------------------------------------- */
 
-function lsRead(key) {
+function lsRead(key, isValid) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return isDataset(parsed) ? parsed : null;
+    return isValid(parsed) ? parsed : null;
   } catch {
     return null; // corrupt, or storage blocked — treat as "nothing saved"
   }
@@ -43,32 +43,36 @@ function lsWrite(key, payload) {
   }
 }
 
-const lsRemove = (key) => { try { localStorage.removeItem(key); } catch { /* ignore */ } };
+export const lsRemove = (key) => { try { localStorage.removeItem(key); } catch { /* ignore */ } };
 
 /* -- Read / write ------------------------------------------------------- */
 
-async function readDataset(key) {
+/**
+ * Read a saved record, validated by `isValid`. Shared with core/library.js,
+ * which persists a different shape (a list of sources) under the same rules.
+ */
+export async function readRecord(key, isValid) {
   if (idbAvailable()) {
     try {
       const found = await idbGet(key);
-      if (isDataset(found)) return found;
+      if (isValid(found)) return found;
     } catch {
       // fall through to the fallback below
     }
     // Nothing in IndexedDB yet — adopt anything the old localStorage-only
     // version left behind, then stop paying its size cost.
-    const legacy = lsRead(key);
+    const legacy = lsRead(key, isValid);
     if (legacy) {
       try { await idbSet(key, legacy); lsRemove(key); } catch { /* keep the copy */ }
       return legacy;
     }
     return null;
   }
-  return lsRead(key);
+  return lsRead(key, isValid);
 }
 
 /** Resolves to { ok } or { ok: false, message } — never throws. */
-async function writeDataset(key, payload) {
+export async function writeRecord(key, payload) {
   if (idbAvailable()) {
     try {
       await idbSet(key, payload);
@@ -124,7 +128,7 @@ export function useDataset(moduleId) {
   useEffect(() => {
     alive.current = true;
     const seq = ++loadSeq.current;
-    readDataset(key)
+    readRecord(key, isDataset)
       .then((saved) => {
         if (!alive.current || seq !== loadSeq.current) return;
         if (saved) setState({ rows: saved.rows, meta: saved.meta ?? null });
@@ -140,7 +144,7 @@ export function useDataset(moduleId) {
       loadSeq.current++;
       setState({ rows, meta });
       setPersistWarning("");
-      writeDataset(key, { rows, meta }).then((res) => {
+      writeRecord(key, { rows, meta }).then((res) => {
         if (alive.current && !res.ok) setPersistWarning(res.message);
       });
     },

@@ -65,3 +65,30 @@ export function shortDate(iso) {
 export function daysBetween(a, b) {
   return Math.round((isoToDate(b) - isoToDate(a)) / 86_400_000) + 1;
 }
+
+/* -- Money -------------------------------------------------------------- */
+
+/** Whole dollars with separators: 1234.56 -> "$1,235". Negatives keep the sign. */
+export function money(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const v = Math.round(Number(n));
+  return (v < 0 ? "-$" : "$") + Math.abs(v).toLocaleString();
+}
+
+/** Compact money for stat tiles: 7415439 -> "$7.4M", 12900 -> "$12.9K". */
+export function moneyCompact(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const v = Number(n);
+  const sign = v < 0 ? "-" : "";
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
+/** A stored ratio (0.7752) as a percentage string. Not to be confused with
+ *  pct(), which divides a part by a total. */
+export function ratio(n, digits = 1) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return (Number(n) * 100).toFixed(digits) + "%";
+}

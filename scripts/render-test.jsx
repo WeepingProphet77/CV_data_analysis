@@ -30,6 +30,16 @@ import ProdBeds from "../src/modules/production/views/Beds.jsx";
 import ProdJobs from "../src/modules/production/views/Jobs.jsx";
 import ProdPieces from "../src/modules/production/views/Pieces.jsx";
 import DayDetail from "../src/modules/production/views/DayDetail.jsx";
+import JobCostModule from "../src/modules/job-cost/index.jsx";
+import JcPortfolio from "../src/modules/job-cost/views/Portfolio.jsx";
+import JcJobs from "../src/modules/job-cost/views/Jobs.jsx";
+import JcJobDetail from "../src/modules/job-cost/views/JobDetail.jsx";
+import JcCostCodes from "../src/modules/job-cost/views/CostCodes.jsx";
+import JcProductionLink from "../src/modules/job-cost/views/ProductionLink.jsx";
+import JcSourceLibrary, { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
+import { buildSource } from "../src/modules/job-cost/parse.js";
+import { categoryOf } from "../src/modules/job-cost/categories.js";
+import { sampleWorkbooks } from "./job-cost-sample.mjs";
 import ScheduleModule from "../src/modules/schedule/index.jsx";
 import App from "../src/App.jsx";
 import { sumBy, distinct } from "../src/core/aggregate.js";
@@ -59,6 +69,34 @@ const prodRows = prodCsv.records.map((rec) => {
 
 const prodPlants = ["All", ...distinct(prodRows, (r) => r.plant)];
 const prodDay = prodRows[0].date;
+
+/*
+ * Job cost fixtures. The sample workbooks are generated rather than read: a
+ * Job Cost Report is a binary multi-sheet workbook, and no real one may be
+ * committed (CLAUDE.md §1).
+ */
+const jcSources = sampleWorkbooks().map((wb) => buildSource(wb.sheets, { plant: wb.plant, fileName: wb.fileName }));
+const jcJobs = jcSources.flatMap((s) => s.jobs).map((j) => ({
+  ...j,
+  costProgress: j.totals.projCost > 0 ? j.totals.actCost / j.totals.projCost : 0,
+  overProjection: j.totals.projCost > 0 && j.totals.actCost > j.totals.projCost,
+}));
+const jcCosts = jcSources.flatMap((s) => s.costs).map((c) => ({ ...c, category: categoryOf(c.code).label }));
+const jcQtyByJob = new Map();
+for (const q of jcSources.flatMap((s) => s.quantities)) {
+  if (!jcQtyByJob.has(q.jobKey)) jcQtyByJob.set(q.jobKey, []);
+  jcQtyByJob.get(q.jobKey).push(q);
+}
+const jcData = {
+  jobs: jcJobs,
+  asOfRange: { min: "2026-07-31", max: "2026-08-26" },
+  mixedAsOf: true,
+};
+// A job that exists in the production sample too, so the join has something to
+// match: the sample job numbers differ, so one is grafted on deliberately.
+const jcJoinRows = prodRows.map((r) => ({ ...r, jobNo: "50101" }));
+const jcLossJob = jcJobs.find((j) => j.estOhProfitPct < 0) || jcJobs[0];
+const jcZeroJob = jcJobs.find((j) => j.netContract === 0) || jcJobs[0];
 
 const total = sumBy(rows, (r) => r.hrs);
 const person = distinct(rows, (r) => r.name)[0];
@@ -94,6 +132,24 @@ const cases = [
   ["Prod / Beds no rows", <ProdBeds rows={[]} search="" />],
   ["Prod / DayDetail bed-activity only", <DayDetail date={prodDay} rows={prodRows.filter((r) => !r.isPour).slice(0, 3)} onClose={noop} />],
   ["Schedule (stub)", <ScheduleModule />],
+  ["JobCost module", <JobCostModule />, { allowEmpty: true }],
+  ["JC / SourceDrop empty", <SourceDrop onSource={noop} />],
+  ["JC / SourceLibrary", <JcSourceLibrary sources={jcSources} data={jcData} onSource={noop} onRemove={noop} onClear={noop} persistWarning="" />],
+  ["JC / Portfolio", <JcPortfolio jobs={jcJobs} costs={jcCosts} onOpenJob={noop} />],
+  ["JC / Jobs", <JcJobs jobs={jcJobs} onOpenJob={noop} />],
+  ["JC / CostCodes", <JcCostCodes costs={jcCosts} jobs={jcJobs} search="" onOpenJob={noop} />],
+  ["JC / JobDetail", <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)} quantities={jcQtyByJob.get(jcJobs[0].key) || []} production onBack={noop} onOpenProduction={noop} />],
+  // A job forecast to a loss, and one with no contract at all — every margin
+  // and progress figure divides by one of those.
+  ["JC / JobDetail loss", <JcJobDetail job={jcLossJob} costs={jcCosts.filter((c) => c.jobKey === jcLossJob.key)} quantities={jcQtyByJob.get(jcLossJob.key) || []} production={false} onBack={noop} onOpenProduction={noop} />],
+  ["JC / JobDetail zero contract", <JcJobDetail job={jcZeroJob} costs={jcCosts.filter((c) => c.jobKey === jcZeroJob.key)} quantities={[]} production={false} onBack={noop} onOpenProduction={noop} />],
+  ["JC / vs Production", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />],
+  ["JC / vs Production, none loaded", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={[]} onOpenJob={noop} />],
+  ["JC / vs Production, no match", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={prodRows} onOpenJob={noop} />],
+  ["JC / Portfolio no jobs", <JcPortfolio jobs={[]} costs={[]} onOpenJob={noop} />],
+  ["JC / Jobs no jobs", <JcJobs jobs={[]} onOpenJob={noop} />],
+  ["JC / CostCodes no costs", <JcCostCodes costs={[]} jobs={[]} search="" onOpenJob={noop} />],
+  ["JC / Jobs one job", <JcJobs jobs={[jcJobs[0]]} onOpenJob={noop} />],
   // Degenerate inputs: empty and single-row datasets must not throw.
   ["Overview / no rows", <Overview rows={[]} onOpenProject={noop} />],
   ["Cumulative / no rows", <Cumulative rows={[]} />],
@@ -155,6 +211,29 @@ if (cards < 100 || wkCols === 0) {
   console.log(`FAIL   board rendered cards + week totals (cards=${cards}, wk cells=${wkCols})`);
 } else {
   console.log(`  ok   board rendered its grid          ${cards} piece cards, ${wkCols} week-total cells`);
+}
+
+// The job cost grid must reproduce the report's sections and subtotals, and
+// the join view must actually match a job rather than silently rendering none.
+const jcDetail = renderToString(
+  <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)}
+               quantities={jcQtyByJob.get(jcJobs[0].key) || []} production onBack={noop} onOpenProduction={noop} />
+);
+const groupRows = (jcDetail.match(/class="grouprow"/g) || []).length;
+const subtotals = (jcDetail.match(/class="subtotalrow"/g) || []).length;
+if (groupRows < 4 || groupRows !== subtotals) {
+  failures++;
+  console.log(`FAIL   job cost grid drew its sections (groups=${groupRows}, subtotals=${subtotals})`);
+} else {
+  console.log(`  ok   job cost grid drew its sections  ${groupRows} sections, ${subtotals} subtotals`);
+}
+
+const jcJoin = renderToString(<JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />);
+if (!jcJoin.includes("50101") || jcJoin.includes("No job number appears in both")) {
+  failures++;
+  console.log("FAIL   cost/production join matched a job");
+} else {
+  console.log("  ok   cost/production join matched a job");
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll views rendered.\n`);
