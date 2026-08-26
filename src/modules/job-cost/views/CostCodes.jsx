@@ -53,6 +53,8 @@ export default function CostCodes({ costs, jobs, search, onOpenJob }) {
     est: rows.reduce((t, r) => t + r.estCost, 0),
     proj: rows.reduce((t, r) => t + r.projCost, 0),
     act: rows.reduce((t, r) => t + r.actCost, 0),
+    variance: rows.reduce((t, r) => t + r.variance, 0),
+    over: rows.reduce((t, r) => t + r.over, 0),
   }), [rows]);
 
   const maxAct = Math.max(...rows.map((r) => r.actCost), 1);
@@ -119,7 +121,10 @@ export default function CostCodes({ costs, jobs, search, onOpenJob }) {
               <td className="num">{money(totals.proj)}</td>
               <td className="num">{money(totals.act)}</td>
               <td className="num">{totals.proj > 0 ? ratio(totals.act / totals.proj) : "—"}</td>
-              <td colSpan={2} />
+              <td className="num" style={{ color: totals.variance < 0 ? "var(--critical)" : undefined }}>
+                {money(totals.variance)}
+              </td>
+              <td className="num">{totals.over || <span className="muted">—</span>}</td>
             </tr>
           </tfoot>
         </table>

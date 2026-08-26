@@ -15,7 +15,7 @@ import { useDataset } from "../../core/store.js";
 import { Tabs } from "../../components/ui.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
 import { useJobCostData, useJobCostFilters } from "./useJobCost.js";
-import { useMyProjects, SCOPE_ALL } from "./useMyProjects.js";
+import { useMyProjects, SCOPE_ALL, SCOPE_MINE } from "./useMyProjects.js";
 import { categoryOptions } from "./categories.js";
 import SourceLibrary, { SourceDrop } from "./views/SourceLibrary.jsx";
 import Portfolio from "./views/Portfolio.jsx";
@@ -23,6 +23,7 @@ import Jobs from "./views/Jobs.jsx";
 import JobDetail from "./views/JobDetail.jsx";
 import CostCodes from "./views/CostCodes.jsx";
 import ProductionLink from "./views/ProductionLink.jsx";
+import Engineering from "./views/Engineering.jsx";
 import { ScopeToggle, NoProjectsYet } from "./views/MyProjects.jsx";
 
 export default function JobCostModule() {
@@ -89,6 +90,7 @@ export default function JobCostModule() {
             onChange={(t) => { setTab(t); f.setSearch(""); }}
             tabs={[
               { id: "portfolio", label: "Portfolio" },
+              { id: "engineering", label: "Drafting & Eng" },
               { id: "jobs", label: `Jobs (${f.jobs.length})` },
               { id: "codes", label: "Cost Codes" },
               { id: "production", label: "vs Production" },
@@ -128,6 +130,16 @@ export default function JobCostModule() {
               )}
 
               {tab === "portfolio" && <Portfolio jobs={f.jobs} costs={f.costs} onOpenJob={setOpenJob} />}
+              {tab === "engineering" && (
+                <Engineering
+                  jobs={f.jobs}
+                  costs={data.costs}
+                  quantities={data.quantities}
+                  mine={mine}
+                  onOpenJob={setOpenJob}
+                  onScopeToMine={() => mine.setScope(SCOPE_MINE)}
+                />
+              )}
               {tab === "jobs" && <Jobs jobs={f.jobs} onOpenJob={setOpenJob} mine={mine} />}
               {tab === "codes" && <CostCodes costs={f.codeCosts} jobs={f.pool} search={f.search} onOpenJob={setOpenJob} />}
               {tab === "production" && (

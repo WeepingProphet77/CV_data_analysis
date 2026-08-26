@@ -29,6 +29,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
       projected,
       estimate: s((j) => j.totals.estCost),
       curMo: s((j) => j.totals.curMo),
+      variance: s((j) => j.totals.variance),
       margin: contract - projected,
       marginPct: contract > 0 ? (contract - projected) / contract : 0,
     };
@@ -37,9 +38,12 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
   const byPlant = useMemo(() => {
     const m = new Map();
     for (const j of jobs) {
-      const p = m.get(j.plant) || { plant: j.plant, jobs: 0, contract: 0, projected: 0, actual: 0, billed: 0 };
+      const p = m.get(j.plant) || { plant: j.plant, jobs: 0, contract: 0, projected: 0, actual: 0, billed: 0, variance: 0 };
       p.jobs++; p.contract += j.netContract; p.projected += j.totals.projCost;
       p.actual += j.totals.actCost; p.billed += j.amountBilled;
+      // The report's own variance (projection less actual), summed rather than
+      // recomputed, so the column matches what each job's detail page shows.
+      p.variance += j.totals.variance;
       m.set(j.plant, p);
     }
     return [...m.values()]
@@ -165,6 +169,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                 <th>Plant</th><th className="num">Jobs</th>
                 <th className="num">Net Contract</th><th className="num">Billed</th>
                 <th className="num">Actual Cost</th><th className="num">Projected Cost</th>
+                <th className="num">Variance</th>
                 <th className="num">Est. OH &amp; Profit</th><th className="num">Margin</th>
               </tr>
             </thead>
@@ -177,6 +182,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                   <td className="num">{money(p.billed)}</td>
                   <td className="num">{money(p.actual)}</td>
                   <td className="num">{money(p.projected)}</td>
+                  <td className="num" style={{ color: p.variance < 0 ? "var(--critical)" : undefined }}>{money(p.variance)}</td>
                   <td className="num">{money(p.margin)}</td>
                   <td className="num"><Badge tone={p.marginPct < 0.1 ? "amber" : "green"}>{ratio(p.marginPct)}</Badge></td>
                 </tr>
@@ -190,6 +196,7 @@ export default function Portfolio({ jobs, costs, onOpenJob }) {
                 <td className="num">{money(t.billed)}</td>
                 <td className="num">{money(t.actual)}</td>
                 <td className="num">{money(t.projected)}</td>
+                <td className="num" style={{ color: t.variance < 0 ? "var(--critical)" : undefined }}>{money(t.variance)}</td>
                 <td className="num">{money(t.margin)}</td>
                 <td className="num">{ratio(t.marginPct)}</td>
               </tr>

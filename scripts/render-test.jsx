@@ -36,10 +36,12 @@ import JcJobs from "../src/modules/job-cost/views/Jobs.jsx";
 import JcJobDetail from "../src/modules/job-cost/views/JobDetail.jsx";
 import JcCostCodes from "../src/modules/job-cost/views/CostCodes.jsx";
 import JcProductionLink from "../src/modules/job-cost/views/ProductionLink.jsx";
+import JcEngineering from "../src/modules/job-cost/views/Engineering.jsx";
 import JcSourceLibrary, { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
 import { StarButton, ScopeToggle, NoProjectsYet } from "../src/modules/job-cost/views/MyProjects.jsx";
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { categoryOf } from "../src/modules/job-cost/categories.js";
+import { engineeringRollup, actIsHours } from "../src/modules/job-cost/engineering.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
 import ScheduleModule from "../src/modules/schedule/index.jsx";
 import App from "../src/App.jsx";
@@ -83,6 +85,7 @@ const jcJobs = jcSources.flatMap((s) => s.jobs).map((j) => ({
   overProjection: j.totals.projCost > 0 && j.totals.actCost > j.totals.projCost,
 }));
 const jcCosts = jcSources.flatMap((s) => s.costs).map((c) => ({ ...c, category: categoryOf(c.code).label }));
+const jcQuantities = jcSources.flatMap((s) => s.quantities);
 const jcQtyByJob = new Map();
 for (const q of jcSources.flatMap((s) => s.quantities)) {
   if (!jcQtyByJob.has(q.jobKey)) jcQtyByJob.set(q.jobKey, []);
@@ -164,6 +167,9 @@ const cases = [
   ["JC / vs Production", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />],
   ["JC / vs Production, none loaded", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={[]} onOpenJob={noop} />],
   ["JC / vs Production, no match", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={prodRows} onOpenJob={noop} />],
+  ["JC / Engineering", <JcEngineering jobs={jcJobs} costs={jcCosts} quantities={jcQuantities} mine={jcMineEmpty} onOpenJob={noop} onScopeToMine={noop} />],
+  ["JC / Engineering scoped", <JcEngineering jobs={jcJobs.filter((j) => jcMine.members.has(j.jobNo))} costs={jcCosts} quantities={jcQuantities} mine={jcMine} onOpenJob={noop} onScopeToMine={noop} />],
+  ["JC / Engineering no D&E", <JcEngineering jobs={jcJobs} costs={[]} quantities={[]} mine={jcMineEmpty} onOpenJob={noop} onScopeToMine={noop} />],
   ["JC / Portfolio no jobs", <JcPortfolio jobs={[]} costs={[]} onOpenJob={noop} />],
   ["JC / Jobs no jobs", <JcJobs jobs={[]} onOpenJob={noop} mine={jcMineEmpty} />],
   ["JC / CostCodes no costs", <JcCostCodes costs={[]} jobs={[]} search="" onOpenJob={noop} />],
@@ -273,6 +279,30 @@ if (!jcMineHtml.includes("★") || !jcAllHtml.includes("☆")) {
   console.log("FAIL   star reflects membership");
 } else {
   console.log("  ok   star reflects membership");
+}
+
+// The engineering tab must draw its charts and keep hours out of the outsourced
+// and lump-sum lines -- the numbers that would be silently wrong otherwise.
+const jcEngHtml = renderToString(
+  <JcEngineering jobs={jcJobs} costs={jcCosts} quantities={jcQuantities} mine={jcMineEmpty} onOpenJob={noop} onScopeToMine={noop} />
+);
+const engPaths = (jcEngHtml.match(/<path/g) || []).length;
+if (engPaths < 8) {
+  failures++;
+  console.log(`FAIL   engineering charts drew geometry (paths=${engPaths})`);
+} else {
+  console.log(`  ok   engineering charts drew geometry ${engPaths} paths`);
+}
+{
+  const eng = engineeringRollup(jcJobs, jcCosts, jcQuantities);
+  const hourly = jcCosts.filter((c) => c.section === "D&E" && actIsHours(c));
+  const expected = hourly.reduce((s2, c) => s2 + c.actQty, 0);
+  if (Math.abs(eng.totals.hoursAct - expected) > 0.001 || !eng.lumpSum.length) {
+    failures++;
+    console.log(`FAIL   engineering hours exclude lump sums (got ${eng.totals.hoursAct}, want ${expected}, lumpSum=${eng.lumpSum.length})`);
+  } else {
+    console.log(`  ok   engineering hours exclude lump sums  ${eng.totals.hoursAct}h, ${eng.lumpSum.length} lump-sum line(s)`);
+  }
 }
 
 const jcJoin = renderToString(<JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />);

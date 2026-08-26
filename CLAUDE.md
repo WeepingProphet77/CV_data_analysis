@@ -817,6 +817,7 @@ cost report loaded.
 | `Jobs.jsx` | **Jobs** | The sortable job table — every column sorts, which is the main way in. |
 | `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
 | `ProductionLink.jsx` | **vs Production** | The join above. |
+| `Engineering.jsx` | **Drafting & Eng** | The role dashboard — see below. |
 | `MyProjects.jsx` | (controls) | The star toggle and the All / My Projects switch. |
 | `JobDetail.jsx` | drill-down | The whole report for one job, reproduced. |
 
@@ -865,11 +866,56 @@ A starred subset of jobs, persisted, with every tab isolated to it.
 - Both `lib.ready` and `mine.ready` gate the first render — otherwise a saved
   "My Projects" choice flashes as "All".
 
+### The Drafting & Engineering tab
+
+A role dashboard over the D&E section (60.x) plus the D&E quantity rows, which
+track *pieces designed*. `engineering.js` holds all of it as plain ESM so the
+tests can import it in node.
+
+**Hours are the point of this tab, and reading them takes care.** On in-house
+labor codes the report's Est/Act **Qty** columns are hours — the implied
+cost-per-unit is quantized to standard rates ($52 drafting, $69 engineering,
+$16–52 checking) across all 126 profiled jobs. On outsourced codes (60.7x) they
+are not: those imply $6,000–$100,000 per unit and are a lump sum against a
+contract.
+
+Some in-house lines also book a lump sum to a labor code, **and the estimate and
+actual sides do it independently**: 41 lines carry a lump-sum *estimate*
+(`estQty` of 1 against six figures) while booking real hours as *actual*, and 14
+do the reverse. So `estIsHours` and `actIsHours` judge each side separately.
+
+This is not a rounding concern. Reading the estimate side uncritically puts the
+estimated rate at **$104/hr against a $59/hr actual**, which invents a rate
+problem that does not exist. Judged properly both sit near $59 and the real
+finding is **35,855 hours over budget** — the overrun is hours, not rate. A view
+that got this wrong would send someone to renegotiate rates instead of looking
+at scope.
+
+Lines excluded from hours are **never dropped**: their cost stays in every
+total, only their hours are withheld, and they are listed in their own panel
+with the implied per-unit figure so the exclusion is auditable.
+
+The band (`RATE_BAND`, $10–$250/hr) is wide on purpose — real rates top out
+around $69 and excluded lines start above $220, so nothing sits near a boundary
+and the threshold is not sensitive.
+
+Two derived measures worth keeping:
+
+- **Design lag** — pieces designed against how far the *whole job* has spent. A
+  job spending faster than it is being designed is the one an engineering lead
+  wants first, and it is not visible anywhere in the source report.
+- **Blended rate** is always total cost over total hours, never an average of
+  per-line rates, and each rate divides a cost by the hours from the *same*
+  lines.
+
 ### Completion bars
 
 Every row that closes a group — each section subtotal and the Job Totals row —
 carries the same "% of Proj" figure and bar as the detail lines it closes,
-through the shared `PctCell`. A group with nothing projected shows a dash, not
+through the shared `PctCell`. **Every total row also carries variance**, in
+every view that has the column: the cost grid, the cost-code roll-up, the plant
+table and each engineering table. A total that omits it forces the reader to do
+the subtraction. A group with nothing projected shows a dash, not
 0%: an empty projection makes the ratio meaningless rather than zero. Section
 totals are summed once in the `bySection` memo rather than per cell.
 

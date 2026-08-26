@@ -15,6 +15,10 @@ import {
 import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/categories.js";
 import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
 import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
+import {
+  disciplineOf, isInHouse, inRateBand, estIsHours, actIsHours, isLumpSum,
+  blendedRate, engineeringRollup, RATE_BAND,
+} from "../src/modules/job-cost/engineering.js";
 import { money, moneyCompact, ratio } from "../src/core/format.js";
 import productionSchema from "../src/modules/production/schema.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
@@ -111,6 +115,77 @@ ok("an unknown scope is rejected", !isValidSelection({ members: [], scope: "side
 ok("a missing members list is rejected", !isValidSelection({ scope: SCOPE_ALL }));
 ok("null is rejected", !isValidSelection(null));
 
+console.log("\nDrafting & Engineering classification");
+eq("checking codes", disciplineOf("60.020").label, "Checking");
+eq("drafting codes", disciplineOf("60.120").label, "Drafting");
+eq("engineering codes", disciplineOf("60.220").label, "Engineering");
+eq("outsourced codes", disciplineOf("60.700").label, "Outsourced");
+ok("in-house covers 60.0/1/2", ["60.010", "60.120", "60.220"].every(isInHouse));
+ok("outsourced is not in-house", !isInHouse("60.700") && !isInHouse("60.730"));
+
+console.log("\nHours detection");
+// Real observed rates: $52 drafting, $69 engineering. Real lump sums: $6k+.
+ok("a standard drafting rate reads as hours", inRateBand(52 * 100, 100));
+ok("a standard engineering rate reads as hours", inRateBand(69 * 100, 100));
+ok("a lump sum does not", !inRateBand(490095, 1));
+ok("zero quantity does not", !inRateBand(1000, 0));
+ok("zero cost does not", !inRateBand(0, 100));
+ok("the band excludes just above the top real rate", !inRateBand(RATE_BAND.max * 10 + 1, 10));
+
+// A line may book a lump-sum estimate but real actual hours, or the reverse.
+// Each side has to be judged on its own or one corrupts the other's rate.
+{
+  const mixed = { code: "60.220", estCost: 446220, estQty: 1, actCost: 69 * 800, actQty: 800 };
+  ok("a lump-sum estimate is rejected", !estIsHours(mixed));
+  ok("...while its real actual hours are kept", actIsHours(mixed));
+  const reverse = { code: "60.220", estCost: 69 * 500, estQty: 500, actCost: 337591, actQty: 101.5 };
+  ok("a real estimate is kept", estIsHours(reverse));
+  ok("...while its lump-sum actual is rejected", !actIsHours(reverse));
+  ok("a lump-sum actual is reported as such", isLumpSum(reverse));
+  ok("an outsourced line is never a labor lump sum", !isLumpSum({ code: "60.700", actCost: 65000, actQty: 2 }));
+}
+
+eq("blended rate divides totals", blendedRate(10000, 200), 50);
+eq("blended rate with no hours is zero, not Infinity", blendedRate(10000, 0), 0);
+
+console.log("\nEngineering rollup");
+{
+  const job = { key: "P|1", jobNo: "1", jobTitle: "T", plant: "P", totals: { actCost: 500, projCost: 1000 } };
+  const L = (code, estQty, estCost, actQty, actCost) => ({
+    section: "D&E", jobKey: "P|1", jobNo: "1", plant: "P", code, desc: code,
+    estQty, estCost, projCost: estCost, curMo: 0, actQty, actCost,
+    variance: estCost - actCost, pctProj: 0,
+  });
+  const costs = [
+    L("60.120", 100, 5200, 150, 7800),        // drafting at $52/hr, 50 hrs over
+    L("60.220", 100, 6900, 80, 5520),         // engineering at $69/hr, under
+    L("60.700", 1, 50000, 1, 40000),          // outsourced lump sum
+    L("60.220", 1, 200000, 2, 300000),        // lump sum booked to a labor code
+  ];
+  const qty = [{ stage: "D&E", jobKey: "P|1", product: "ARCH", estQty: 100, projQty: 120, actQty: 60 }];
+  const r = engineeringRollup([job], costs, qty);
+  const t = r.totals;
+
+  eq("hours exclude outsourced and lump sums", [t.hoursEst, t.hoursAct], [200, 230]);
+  eq("blended actual rate ignores lump sums", Math.round(t.rateAct), 58);
+  eq("blended estimate rate ignores lump sums", Math.round(t.rateEst), 61);
+  eq("cost totals include everything", t.actCost, 353320);
+  eq("the lump-sum line is reported, not dropped", [r.lumpSum.length, t.lumpSumLines], [1, 1]);
+  eq("outsourced is measured", t.outsourcedAct, 40000);
+  eq("design progress comes from the D&E quantity rows", Math.round(t.designPct * 100), 50);
+  // The job is 50% spent overall but only 50% designed -- no lag here.
+  eq("design lag compares design against the whole job's spend", Math.round(r.byJob[0].designLag * 100), 0);
+  eq("disciplines present", r.byDiscipline.map((d) => d.id), ["drafting", "engineering", "outsourced"]);
+  ok("a job with no D&E is left out", engineeringRollup([job], [], []).byJob.length === 0);
+
+  // Variance must survive to every total line.
+  const lineVar = costs.reduce((a, c) => a + c.variance, 0);
+  eq("totals carry variance", t.variance, lineVar);
+  eq("each discipline carries variance",
+     r.byDiscipline.reduce((a, d) => a + d.variance, 0), lineVar);
+  eq("each job carries variance", r.byJob[0].variance, lineVar);
+}
+
 /* -- Structural parse ---------------------------------------------------- */
 
 console.log("\nSheet structure");
@@ -122,7 +197,11 @@ console.log("\nSheet structure");
   eq("as-of date", p.job.asOf, "2026-08-26");
   eq("net contract includes change orders", p.job.netContract, 4_120_000);
   eq("sections found", p.sections.map((s) => s.section), ["D&E", "PRODUCTION", "FIELD", "OTHER"]);
-  eq("cost lines", p.costs.length, 10);
+  // Counted from the fixture rather than hard-coded, so extending the sample
+  // does not require editing a magic number here.
+  const [nfWb] = sampleWorkbooks();
+  const expectedLines = nfWb.sheets[0].aoa.filter((row) => /^\d\d\.\d{3}$/.test(String(row[0] ?? "").trim())).length - 1; // less the contingency
+  eq("cost lines", p.costs.length, expectedLines);
   eq("quantity rows kept apart from cost lines", p.quantities.length, 4);
   ok("quantity rows carry no cost", p.quantities.every((q) => q.estQty >= 0 && q.projQty >= 0));
   eq("quantity stage labels", [...new Set(p.quantities.map((q) => q.stageLabel))].sort(),
@@ -213,6 +292,7 @@ if (existsSync(REAL_DIR)) {
   const files = readdirSync(REAL_DIR).filter((f) => /\.xlsx?$/i.test(f) && !f.startsWith("~$")).sort();
   if (!files.length) console.log("  --  no workbooks in the folder; skipped");
   let totalJobs = 0;
+  const realJobs = [], realCosts = [], realQty = [];
   for (const f of files) {
     const wb = XLSX.read(readFileSync(join(REAL_DIR, f)));
     const sheets = wb.SheetNames.map((n) => ({
@@ -228,6 +308,45 @@ if (existsSync(REAL_DIR)) {
        src.costs.every((c) => SECTIONS.includes(c.section)));
     ok(`${plant}: no cost line is a quantity row in disguise`,
        !src.costs.some((c) => ["D&E", "PROD", "DELV"].includes(c.code)));
+    realJobs.push(...src.jobs); realCosts.push(...src.costs); realQty.push(...src.quantities);
+  }
+
+  /*
+   * The engineering roll-up has to conserve totals the same way the parse does:
+   * every breakdown must sum back to the same figure, and hours must come only
+   * from lines that genuinely carry them.
+   */
+  if (realJobs.length) {
+    const eng = engineeringRollup(realJobs, realCosts, realQty);
+    const et = eng.totals;
+    const de = realCosts.filter((c) => c.section === "D&E");
+    const close = (a, b, tol = 0.01) => Math.abs(a - b) <= tol;
+    const sumOf = (rows, f) => rows.reduce((s, x) => s + f(x), 0);
+
+    ok("D&E: cost total equals the sum of its lines", close(et.actCost, sumOf(de, (c) => c.actCost)));
+    ok("D&E: variance total equals the sum of its lines", close(et.variance, sumOf(de, (c) => c.variance)));
+    ok("D&E: per-job variance sums to the total", close(sumOf(eng.byJob, (j) => j.variance), et.variance));
+    ok("D&E: per-discipline variance sums to the total", close(sumOf(eng.byDiscipline, (d) => d.variance), et.variance));
+    ok("D&E: per-code variance sums to the total", close(sumOf(eng.byCode, (c) => c.variance), et.variance));
+    ok("D&E: per-code cost sums to the total", close(sumOf(eng.byCode, (c) => c.actCost), et.actCost));
+    ok("D&E: hours equal the sum of hour-bearing lines",
+       close(et.hoursAct, sumOf(de.filter(actIsHours), (c) => c.actQty), 0.001));
+    ok("D&E: estimated hours likewise",
+       close(et.hoursEst, sumOf(de.filter(estIsHours), (c) => c.estQty), 0.001));
+    ok("D&E: no outsourced line contributes hours",
+       !de.some((c) => /^60\.7/.test(c.code) && (actIsHours(c) || estIsHours(c))));
+    ok("D&E: the lump-sum list matches its counter", eng.lumpSum.length === et.lumpSumLines);
+    // Estimate and actual rates should land near each other and near the
+    // observed standard rates; a wild figure means a lump sum leaked in.
+    ok("D&E: blended rates are plausible labor rates",
+       et.rateAct > 30 && et.rateAct < 120 && et.rateEst > 30 && et.rateEst < 120,
+       `est $${et.rateEst.toFixed(2)}/hr, act $${et.rateAct.toFixed(2)}/hr`);
+    ok("D&E: no total is NaN or Infinity",
+       Object.values(et).every((v) => typeof v !== "number" || Number.isFinite(v)));
+    ok("D&E: every per-job figure is finite",
+       eng.byJob.every((j) => [j.rateAct, j.rateEst, j.designPct, j.designLag, j.pctProj].every(Number.isFinite)));
+    console.log(`  --  D&E: ${eng.byJob.length} jobs, ${et.hoursAct.toFixed(0)} hours, ` +
+                `$${et.rateAct.toFixed(2)}/hr, ${eng.lumpSum.length} lump-sum line(s)`);
   }
   console.log(`  --  ${totalJobs} real jobs checked across ${files.length} workbook(s)`);
 } else {

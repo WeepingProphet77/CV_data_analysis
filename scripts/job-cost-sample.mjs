@@ -95,8 +95,14 @@ export function sampleWorkbooks() {
           ],
           groups: [
             G("D&E", "D&E TASK GROUP TOTAL", [
-              ["60.120", "DRAFTING - PIECE DRAWINGS", 900, 70_000, 70_000, 0, 950, 62_000],
-              ["60.220", "ENGINEERING DESIGN", 1200, 85_000, 80_000, 1_200, 1150, 71_500],
+              // $52/hr drafting, running over on hours -- the common real shape.
+              ["60.120", "DRAFTING - PIECE DRAWINGS", 900, 46_800, 46_800, 0, 1_150, 59_800],
+              // $69/hr engineering, under budget.
+              ["60.220", "ENGINEERING DESIGN", 1_200, 82_800, 82_800, 1_200, 900, 62_100],
+              // A lump sum booked to a labor code: cost counts, hours must not.
+              ["60.220", "ENGINEERING DESIGN", 1, 250_000, 250_000, 0, 2, 180_000],
+              // Outsourced -- quantity is a contract count, never hours.
+              ["60.700", "OUTSOURCED ENG/DRAFT", 1, 120_000, 120_000, 0, 1, 96_000],
             ]),
             G("PRODUCTION", "PRODUCTION TASK GROUPS TOTAL", [
               ["20.100", "WELDING SHOP MATERIALS", 1, 140_000, 138_000, 5_000, 1, 120_400],
@@ -147,10 +153,15 @@ export function sampleWorkbooks() {
           jobNo: "50110", title: "CIVIC CENTER PHASE 2", asOf: "7/31/2026",
           contract: 2_500_000, billed: 1_100_000, contingency: 25_000,
           quantities: [
+            { section: "D&E", stage: "D&E", product: "DOUBLE TEES", est: 150, proj: 150, act: 30 },
             { section: "PRODUCTION", stage: "PROD", product: "DOUBLE TEES (PCS)", est: 150, proj: 150, act: 60 },
             { section: "PRODUCTION", stage: "PROD", product: "DOUBLE TEES (SQ FT)", est: 22_000, proj: 22_000, act: 8_800 },
           ],
           groups: [
+            G("D&E", "D&E TASK GROUP TOTAL", [
+              ["60.120", "DRAFTING - PIECE DRAWINGS", 400, 20_800, 20_800, 900, 300, 15_600],
+              ["60.010", "CHECKING - ERECTION DRAWINGS", 40, 2_080, 2_080, 0, 20, 1_040],
+            ]),
             G("PRODUCTION", "PRODUCTION TASK GROUPS TOTAL", [
               // Same code number as Northfield's 20.600 but different work —
               // the ambiguity the Cost Codes view has to keep apart.
