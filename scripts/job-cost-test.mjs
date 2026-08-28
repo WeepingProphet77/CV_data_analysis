@@ -483,8 +483,28 @@ if (existsSync(REAL_DIR)) {
        })(), "forecast $/SF");
     ok("D&E: every per-job figure is finite",
        eng.byJob.every((j) => [j.rateAct, j.rateEst, j.designPct, j.designLag, j.pctProj].every(Number.isFinite)));
-    console.log(`  --  D&E: ${eng.byJob.length} jobs, ${et.hoursAct.toFixed(0)} hours, ` +
-                `$${et.rateAct.toFixed(2)}/hr, ${eng.lumpSum.length} lump-sum line(s)`);
+    /*
+     * Figures CLAUDE.md quotes from a snapshot of these reports. They are
+     * printed, never asserted -- the reports are refreshed weekly and the
+     * counts move. If they have drifted far from what §13 says, update §13.
+     */
+    const inHouse = de.filter((c) => isInHouse(c.code));
+    const lumpEst = inHouse.filter((c) => c.estQty > 0 && c.estCost > 0 && !estIsHours(c));
+    console.log(`  --  D&E: ${eng.byJob.length} jobs, ${et.hoursAct.toFixed(0)} hours ` +
+                `(est ${et.hoursEst.toFixed(0)}), $${et.rateAct.toFixed(2)}/hr act vs ` +
+                `$${et.rateEst.toFixed(2)}/hr est`);
+    console.log(`  --  D&E lines: ${inHouse.length} in-house, ${lumpEst.length} lump-sum estimate ` +
+                `(${lumpEst.filter(actIsHours).length} of them still hourly on the actual side), ` +
+                `${eng.lumpSum.length} lump-sum actual`);
+    console.log(`  --  hours reading agrees on ${et.hoursAgreement.agree}/${et.hoursAgreement.lines} ` +
+                `lines (${(et.hoursAgreement.pct * 100).toFixed(0)}%) -- see §13 before trusting per-job hours`);
+    const sfTotal = withSf.reduce((a, j) => a + j.sf.job, 0);
+    const sfSum = (f) => withSf.reduce((a, j) => a + f(j), 0);
+    console.log(`  --  $/SF over ${withSf.length} jobs and ${sfTotal.toFixed(0)} SF: ` +
+                `contract $${(sfSum((j) => j.netContract) / sfTotal).toFixed(2)}, ` +
+                `budget $${(sfSum((j) => j.totals.estCost) / sfTotal).toFixed(2)}, ` +
+                `forecast $${(sfSum((j) => j.totals.projCost) / sfTotal).toFixed(2)}, ` +
+                `actual $${(sfSum((j) => j.totals.actCost) / sfTotal).toFixed(2)}`);
   }
   console.log(`  --  ${totalJobs} real jobs checked across ${files.length} workbook(s)`);
 } else {

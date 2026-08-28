@@ -9,10 +9,32 @@ commit that changes the code.
 ## 0. Start here
 
 **Read §1 (constraints), §2 (layout) and §7 (testing) before changing anything.**
-If the work touches the production module, read §11 too; the job cost
-module, §13.
+Then read the section for the module you are touching: §11 production,
+§12 employee time, §13 job cost. §3 covers adding a tab or a whole module,
+§9 the code conventions, §6 styling.
 
-### State as of 2026-08-26
+### The working cycle
+
+Every change in this repo has gone through the same loop. Follow it:
+
+1. **Profile the real data first** when the work touches an export. Every wrong
+   assumption in this project's history was caught by looking at the actual file
+   rather than reasoning about it — see the $/SF and hours episodes in §13.
+2. **Put pure logic in a `.js` file** the test scripts can import in node, and
+   keep `.jsx` for views only (§2).
+3. **`npm test`** — five suites. The job cost and production suites additionally
+   run against the *real* exports when they are present locally, which is the
+   check that matters most.
+4. **Update this file in the same commit**, wherever a decision here stopped
+   being true. Use an assertion when scripting an edit to it: several edits to
+   this document have silently no-op'd because a pattern stopped matching.
+5. **Commit, push, then `npm run deploy`** — deploys are manual and pushing to
+   `main` does not publish (§8).
+6. **Verify the deploy against the new bundle hash**, not "a bundle" (§8).
+7. **Say plainly that nothing was visually verified** — there is no browser
+   automation here (§7).
+
+### State as of 2026-08-27
 
 | | |
 |---|---|
@@ -21,6 +43,7 @@ module, §13.
 | Modules | **Employee Time** built · **Production** built · **Job Cost** built · **Schedule** placeholder |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
 | Tests | five suites, all passing — `npm test` |
+| Real data | `ScheduledProdRptDtl.xls` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
 
 ### Running it
 
@@ -28,6 +51,9 @@ module, §13.
 npm install
 npm run dev       # http://localhost:5173
 npm test          # gate every change on this
+npm run build     # production build into dist/
+npm run preview   # serve the built dist/ locally
+npm run sample    # regenerate the synthetic CSV samples
 npm run deploy    # test, build, publish to gh-pages
 ```
 
@@ -52,16 +78,37 @@ shell may not pick that up, so prefix commands with
 - **Eight categorical colors, never a ninth** (§5).
 - **Job Cost persists a *library*, not a dataset** — one file per plant, each
   replaceable on its own. Don't "simplify" it back to `useDataset` (§13).
+- **Every `$/SF` rate divides by the job square footage**, never by the area cast
+  to date. Getting this wrong produces a rate that can't be compared to a budget
+  (§13).
+- **A missing rate is `null`, not `0`.** A job with no square footage has an
+  unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
+- **A total row shows variance.** Every table that has the column totals it.
+- **Don't trust a doc edit that wasn't asserted.** Scripted edits to this file
+  have silently matched nothing more than once; check the result.
 
 ---
 
 ## 1. What this project is
 
-A static, browser-only analysis front end for data exported from **Concrete
-Vision** — the ERP the company runs on. Concrete Vision handles employee time,
-production, scheduling and more. The user exports a report (usually `.csv`,
-sometimes `.xlsx`) and drops it on this site to get analysis the ERP's own
-reporting doesn't give them.
+A static, browser-only analysis front end for the company's own reports. The
+user exports a report, drops it on this site, and gets analysis the source
+system's own reporting doesn't give them.
+
+**Two source systems feed it, and they are not the same product:**
+
+- **Concrete Vision** — the ERP the company runs on: employee time, production,
+  scheduling. Exports are flat tables, usually `.csv`, sometimes `.xlsx`, and go
+  through the schema-driven parser in `core/parse.js` (§4). Modules: Employee
+  Time (§12), Production (§11), Schedule (placeholder).
+- **The cost system** — a separate product that issues the weekly job cost
+  reports, one workbook per plant. Its export is a *formatted report*, not a
+  table, and has its own parser (§13). Module: Job Cost.
+
+They describe **the same jobs**, which is what makes the cross-module join
+possible — on the job *number*, never the name (§13). Don't assume a convention
+from one system holds in the other; the two write job names, plant names and
+quantities differently, and every place they disagree is documented.
 
 This started as a single-file React dashboard (`legacy/eng_time_dashboard.html`,
 kept for reference). That file is the origin of the visual language and the
@@ -74,8 +121,9 @@ Employee Time feature set; it is **not** maintained and should not be edited.
    Never add one, and never suggest one — the data is employee and job data
    belonging to the company.
 2. **No company data in the repository, ever.** `.gitignore` blocks `*.csv`,
-   `*.xlsx` and `*.xls`. The sole exception is `samples/*.sample.csv`, which is
-   synthetic. If a real export ever needs to be inspected, read it from wherever
+   `*.xlsx`, `*.xls`, images, and the whole `weekly job costs/` folder. The sole
+   exception is `samples/*.sample.csv`, which is synthetic. Real job names are
+   company data too: fabricate them in tests and comments. If a real export ever needs to be inspected, read it from wherever
    it already lives; do not copy it into the repo, and do not paste rows of it
    into commit messages, issues or code comments.
 3. **The site is static.** It deploys to GitHub Pages from `dist/`. There is no
@@ -106,7 +154,7 @@ src/
     library.js                 useLibrary — multi-source persistence (see §13)
     persisted.js               usePersistedState — one small saved preference
     palette.js                 the 8 validated categorical series colors + colorMapFor
-    format.js                  fmt / pct / compact / date helpers
+    format.js                  fmt / pct / compact / money / perSf / dates
     hooks.js                   useSize (ResizeObserver)
   components/                  shared, module-agnostic UI
     ui.jsx                     Badge, MiniBar, StatCard, Tabs, Panel, sorting
@@ -126,12 +174,26 @@ src/
     production/                built  — scheduled pours (see §11)
       board.js                 planning-board column math (plain ESM)
       metrics.js               the pieces/SF/CY/LF measure list
+    job-cost/                  built  — weekly job cost by plant (see §13)
+      parse.js                 the report walker — pure ESM, node-importable
+      importFile.js            File -> source; owns the lazy SheetJS import
+      schema.js                field catalog for the detail view (NOT a
+                               core/parse.js schema — this export isn't flat)
+      categories.js            cost-code prefix -> category
+      plants.js                cost plant <-> Concrete Vision plant aliases
+      squarefeet.js            job square footage and every $/SF rate
+      engineering.js           the D&E roll-up: budget, hours, design progress
+      jobMetrics.js            deriveJob — the fields every view expects
+      useJobCost.js            derived data + filter state
+      useMyProjects.js         the starred-projects selection and its scope
     schedule/                  placeholder
 scripts/
   make-sample.mjs              generates the synthetic employee-time CSV
   make-production-sample.mjs   generates the synthetic production CSV
   smoke-test.mjs               employee-time + core data-layer checks
   production-test.mjs          production schema, board columns, calendar grid
+  job-cost-test.mjs            job cost parse, reconciliation, $/SF, D&E
+  job-cost-sample.mjs          synthetic job cost workbooks, built in memory
   storage-test.mjs             IndexedDB persistence (fake-indexeddb)
   render-test.jsx              server-renders every view against the samples
   deploy-pages.sh              manual gh-pages deploy (see §8)
@@ -146,9 +208,14 @@ legacy/eng_time_dashboard.html     the original single-file tool; reference only
 imports from `modules/`. A module may import from both. Anything a second module
 would want belongs in `core/` or `components/`, not copied.
 
-`core/` files are plain ESM with no JSX and no React (except `store.js` and
-`hooks.js`, which are hooks by nature) — that is what lets `scripts/smoke-test.mjs`
-import them directly in node with no build step.
+`core/` files are plain ESM with no JSX and no React — except the four that are
+hooks by nature: `store.js`, `library.js`, `persisted.js` and `hooks.js`. That is
+what lets the test scripts import the rest directly in node with no build step.
+
+The same rule applies **inside** a module: anything a test needs to reach lives in
+a `.js` file, never a `.jsx` one, because plain node cannot load JSX. That is why
+`job-cost/` keeps its parser, roll-ups and metrics as plain ESM and only its views
+as `.jsx`.
 
 ---
 
@@ -189,10 +256,37 @@ reports do, one per plant — uses `useLibrary` from `core/library.js` instead o
 `useDataset`, and owns its own strip in place of `<DataBar>`. See §13 before
 reaching for it; a module fed by a single export should stay on `useDataset`.
 
+### Adding a tab or measure to a module that already exists
+
+Most work is this, not a new module. The shape that has held up:
+
+1. **Look at the real export before designing.** Profile it in a throwaway
+   script; do not reason from the schema. Every measure in §13 that turned out
+   wrong on the first attempt was wrong because it was inferred rather than
+   checked, and every one was caught by printing actual cells.
+2. **Put the arithmetic in a plain `.js` file in the module** — `engineering.js`,
+   `squarefeet.js`, `board.js` are the models. It must be importable by node so
+   the arithmetic can be tested without a browser or a build.
+3. **Add the tab to the module's `index.jsx`** `Tabs` array and render it
+   alongside the others. Filters are shared; a tab that needs its own control
+   owns it (the production board owns its plant picker, the job cost tab owns
+   the My Projects switch via `FilterBar`'s `leading` slot).
+4. **Test the arithmetic, not the markup.** Assert that breakdowns sum back to
+   the same total, that no figure is `NaN`/`Infinity`, and that a rate divides
+   by what you think it does — see the `$/SF` invariant in §13, which is the
+   single most valuable test in the suite.
+5. **Add render cases** to `scripts/render-test.jsx`, including the empty,
+   single-row and degenerate (zero contract, no quantities) states.
+6. **Say what is derived.** If a figure is not a column in the export, label it
+   as derived in the UI. `Est OH & Profit` is stated; `variance to budget` is
+   not, and the difference matters to whoever reads it.
+
+### Placeholders
+
 `schedule` still renders `<ModulePlaceholder>`, which states its intended scope
 and the export columns it is expected to consume. **That column list is a
 guess** — confirm it against a real Concrete Vision export before building it
-out. `production` is being built from a real export; see §11.
+out.
 
 ---
 
@@ -320,8 +414,14 @@ that file happens to be sitting in the working directory. It is gitignored, so
 CI only ever sees the synthetic sample — but locally it is the check that
 matters most.
 
-`test:jobcost` does the same with the `weekly job costs/` folder, and its
-central assertion is **reconciliation**: for every job, the parsed cost lines
+`test:jobcost` does the same with the `weekly job costs/` folder. It also
+**prints** the headline figures §13 quotes — job counts, hours, blended rates,
+lump-sum line counts, the hours-agreement share and the `$/SF` rates — so a
+session can see at a glance whether the documented numbers have drifted from the
+current reports. Those are printed rather than asserted on purpose: the exports
+are refreshed weekly and the counts legitimately move.
+
+Its central assertion is **reconciliation**: for every job, the parsed cost lines
 must sum to the report's own Job Totals row, the totals must agree with the
 header block, and each section banner must equal the sum of its own lines. That
 is what makes the figures trustworthy — a walker that silently mis-classifies a
@@ -410,8 +510,10 @@ delete the `gh-pages` branch, and drop `scripts/deploy-pages.sh` plus the
   default export for a component.
 - Prefer `useMemo` for derived data over recomputing in render — these views run
   over tens of thousands of rows.
-- Money and hours are formatted through `core/format.js`, never with raw
-  `toFixed` in a component.
+- Money, rates and areas go through `core/format.js` — `money`, `moneyCompact`,
+  `ratio`, `perSf`, `sqft` — never a raw `toFixed` in a component. Note `ratio`
+  formats a stored ratio (`0.7752` → `"77.5%"`) while `pct` divides a part by a
+  total; using the wrong one is off by a factor of the total.
 - Dates are ISO `YYYY-MM-DD` strings everywhere in the data layer. They sort
   lexicographically, which is why filters and grouping compare them directly.
   Use `isoToDate` when a real `Date` is needed — it parses to **local** midnight,
@@ -421,69 +523,80 @@ delete the `gh-pages` branch, and drop `scripts/deploy-pages.sh` plus the
 
 ## 10. Open questions / next steps
 
-Carry these forward; update as they're answered.
+Split by what blocks them: the first group needs an answer from someone at the
+company, the second can be picked up now.
 
-- [x] ~~Confirm the real column names in the **production** export~~ — done,
-      `ScheduledProdRptDtl.xls` profiled 2026-08-24; schema in §11.
-- [ ] Confirm the real column names in Concrete Vision's **schedule** export.
-      The list in that placeholder is still a guess.
+### Needs an answer from the business
+
+- [ ] **Are `Est Qty` / `Act Qty` on the 60.x codes hours?** The report never
+      says so. The inference is strong in aggregate — the implied rate is
+      quantized to $51.84 drafting / $68.59 engineering, and the values are
+      fractional — but it holds on only 56% of lines individually. Confirm with
+      whoever owns the report. If it is not hours, only the hours section of the
+      D&E tab needs relabelling; no cost figure depends on it (§13).
+- [ ] **Shop status is the biggest gap in production.** CV's planning view
+      colour-codes cards by workflow state and the export carries none of it. Is
+      there another report with per-piece status, pour-sheet flags or shop
+      completion? That would make the board a replacement rather than a
+      read-only echo (§11).
+- [ ] **Monroeville reports no quantity rows at all** — no pieces, no square
+      feet, across all 15 jobs. Every other plant has them. A setting, or does
+      that plant genuinely not track them? Until answered, its $/SF and design
+      columns show "—" rather than a misleading zero.
+- [ ] **Jacksonville and Pearland have production but no cost report.** Confirm
+      one exists before assuming those jobs are simply uncosted (`plants.js`).
+- [ ] What are the `-IN` companion jobs (`42343-IN`, `44050-IN`)? 11 of 126,
+      never scheduled, titles suffixed `(EX)` — erection contracts, most likely.
+      Kept as distinct jobs; if they should roll into their base job that is a
+      change to the join in §13.
+- [ ] Confirm the column names in Concrete Vision's **schedule** export. The
+      list in that placeholder is still a guess.
 - [ ] What does the `(RL)` suffix on a piece mark mean, and what are the 51
-      zero-quantity rows that still carry a piece mark? Both are passed through
-      untouched until someone confirms.
-- [ ] **Shop status is the biggest gap.** CV's planning view color-codes cards by
-      workflow state and the export has none of it. Is there another Concrete
-      Vision report that carries per-piece status, pour-sheet flags or shop
-      completion? That would make the board a genuine replacement rather than a
-      read-only echo.
-- [ ] CV shows Est/Act pairs and a Total Emp row. Find out whether an export
-      exists that carries actuals and labor estimates per bed-day.
-- [ ] `Cert` is empty in every row of the export seen so far. It is mapped as a
-      real field regardless, so values will appear if it ever carries any —
-      nothing to do unless someone wants it surfaced more prominently.
-- [ ] Does the employee time export include a pay-rate or cost column? If so,
-      cost rollups become possible — but decide first whether pay data should
-      live in a browser cache at all. Note the job cost reports already carry
-      labor dollars per cost code (the 30.x and 40.x codes), so the cheaper
-      question may be whether timesheet hours can be tied to those instead.
-- [ ] Loading two exports covering different date spans currently **replaces**
-      the dataset. If merging spans is wanted, it needs a dedupe key (probably
-      date + person + job + task). IndexedDB now has the headroom for it.
-- [ ] Very large datasets are held entirely in memory and re-aggregated on every
-      filter change. If that gets sluggish, the fix is indexing or a web worker,
-      not a smaller dataset — measure before optimizing.
-- [x] ~~Cross-module analysis needs a story for joining datasets on job name~~ —
-      done for cost↔production, 2026-08-26. The key is the job **number**, not
-      the name; see §13. Employee Time still has no join — its `job` field has
-      never been profiled against a real export (§12), so confirm its format
-      before extending the same join to it.
-- [ ] No CSV/PNG export from the dashboard yet. It would be most useful on the
-      Job Cost tabs — a filtered cost-code table is the thing most likely to be
-      wanted in a spreadsheet.
-- [ ] **Job cost reports have no date axis.** Each is a snapshot, so there is no
-      trend: "Current Mo Act" is the only period figure, and it is
-      month-to-date, not weekly. Keeping successive weekly imports would make
-      real burn curves possible — the library already stores one file per plant,
-      so it would need a second key (plant + as-of) and a chart over the series.
-      Worth doing only if someone actually wants the trend.
-- [ ] What are the `-IN` companion jobs (`42343-IN`, `44050-IN`)? They are
-      separate cost jobs, never appear in the production schedule, and their
-      titles carry an `(EX)` suffix — erection/installation contracts, most
-      likely. 11 of the 126 jobs are of this form. They are kept as distinct jobs pending confirmation; if they
-      should roll up into their base job, that is a change to the join in §13.
-- [ ] Monroeville's reports carry **no quantity rows at all** — no D&E/PROD/DELV
-      pieces or square feet. Every other plant has them. Is that a setting in
-      the source system, or does that plant genuinely not track them? Until it
-      is answered, the quantity columns on the "vs Production" tab show "—" for
-      those jobs rather than a misleading zero.
-- [ ] The cost system's plant list is a subset of Concrete Vision's. Jacksonville
-      and Pearland have production but no cost report; confirm whether one
-      exists before assuming those jobs are simply uncosted.
-- [ ] Consider a per-person weekly-hours view (over/under 40) once real data
-      confirms how overtime is represented.
+      zero-quantity rows that still carry a mark? Passed through untouched.
+- [ ] Does the employee time export carry a pay-rate or cost column? Decide
+      first whether pay data should sit in a browser cache at all. Note the job
+      cost reports already carry labor dollars per code (30.x, 40.x), so the
+      cheaper question may be whether timesheet hours can tie to those.
+- [ ] Does CV export actuals and labor estimates per bed-day? CV shows Est/Act
+      pairs and a Total Emp row that the current export lacks (§11).
+
+### Could be built now
+
+- [ ] **Weekly trend for job cost.** Each report is a snapshot with no date
+      axis; `Current Mo Act` is the only period figure and it is month-to-date.
+      Keeping successive imports would give real burn curves — the library
+      already stores one entry per plant, so it needs a second key
+      (plant + as-of) and a chart over the series. Only worth it if someone
+      wants the trend.
+- [ ] **CSV / PNG export from the dashboard.** Most useful on the job cost
+      tabs; a filtered cost-code table is the thing most likely to be wanted in
+      a spreadsheet.
+- [ ] **Employee Time ↔ job cost join.** The cost↔production join works on job
+      number (§13). Employee Time's `job` field has never been profiled against
+      a real export (§12), so confirm its format before extending the same join.
+- [ ] **Merging exports that cover different date spans.** Loading a second one
+      currently replaces the dataset. Merging needs a dedupe key — probably
+      date + person + job + task. IndexedDB has the headroom.
+- [ ] Per-person weekly-hours view (over/under 40), once real data confirms how
+      overtime is represented.
+- [ ] Large datasets are held in memory and re-aggregated on every filter
+      change. If that gets sluggish the fix is indexing or a web worker, not a
+      smaller dataset — **measure before optimizing**.
+
+### Settled, kept for the reasoning
+
+- [x] Column names in the **production** export — profiled 2026-08-24 (§11).
+- [x] Column names in the **job cost** export — profiled 2026-08-26 (§13).
+- [x] Cross-module join — cost↔production on job **number**, not name (§13).
+- [x] What `$/SF` should divide by — the job square footage, never area cast to
+      date (§13). Getting this wrong produces a rate that cannot be compared to
+      a budget.
+- [x] `Cert` is empty in every production row seen so far. Mapped anyway, so
+      values appear if it ever carries any.
 
 ---
 
-## 11. Production module — plan
+## 11. Production module
 
 Built from a real export: **`ScheduledProdRptDtl.xls`** ("Scheduled Production
 Report — Detail"), profiled 2026-08-24. It is **forward-looking**: a month of
@@ -687,6 +800,13 @@ state, mirroring `useProductionFilters.js`.
 
 Built from four real exports profiled 2026-08-26: `<Plant> Job Cost Report -
 Active Jobs.xlsx`, one per plant, in the gitignored `weekly job costs/` folder.
+
+> **Every number quoted in this section is from that snapshot.** The reports are
+> refreshed weekly, so the counts move. `npm run test:jobcost` prints the current
+> figures — jobs, hours, rates, lump-sum line counts, the hours-agreement share
+> and the `$/SF` rates — against whatever is in the folder now. If they have
+> drifted far from what is written here, update this section rather than trusting
+> it. The *reasoning* below does not go stale; the arithmetic does.
 
 **These come from a different system than Concrete Vision.** Same company, same
 jobs, different reporting tool — which is why nothing here reuses the production
@@ -948,9 +1068,12 @@ are not: those imply $6,000–$100,000 per unit and are a lump sum against a
 contract.
 
 Some in-house lines also book a lump sum to a labor code, **and the estimate and
-actual sides do it independently**: 41 lines carry a lump-sum *estimate*
-(`estQty` of 1 against six figures) while booking real hours as *actual*, and 14
-do the reverse. So `estIsHours` and `actIsHours` judge each side separately.
+actual sides do it independently**. Of 218 in-house D&E lines, **54** carry a
+lump-sum *estimate* (`estQty` of 1 against six figures) and **36 of those still
+book real hours as their actual** — so a line can be unusable on one side and
+sound on the other. A further **14** carry an *actual* that cannot be read as
+hours; those are the ones the lump-sum panel lists. `estIsHours` and
+`actIsHours` therefore judge each side separately.
 
 This is not a rounding concern. Reading the estimate side uncritically puts the
 estimated rate at **$104/hr against a $59/hr actual**, which invents a rate
@@ -999,8 +1122,12 @@ the subtraction. A group with nothing projected shows a dash, not
 0%: an empty projection makes the ratio meaningless rather than zero. Section
 totals are summed once in the `bySection` memo rather than per cell.
 
-### Not visually verified
+### Visual review status
 
-The whole module was built and tested without anyone looking at it — there is no
-browser automation here (§7). Layout, spacing, colour and interaction need a
-human pass at `npm run dev`.
+The owner reviewed the module on 2026-08-27 and approved the look. Everything
+added after that point — the budget/forecast columns, `$/SF` throughout, the
+hours section — has **not** been looked at, and there is no browser automation
+here to check it (§7). The tables that grew most columns are Jobs, the plant
+table and the D&E project table; those are where crowding would show first.
+
+Keep saying plainly which changes were and were not visually verified.

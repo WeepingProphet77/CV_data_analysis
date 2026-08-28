@@ -35,10 +35,11 @@ export function disciplineOf(code) {
  * and are plainly a lump sum against a contract.
  *
  * Some in-house lines also book a lump sum to a labor code, and the estimate
- * and the actual do it independently: 41 lines carry a lump-sum *estimate*
- * (estQty of 1 against six figures) while booking real hours as *actual*, and
- * 14 others do the reverse. So each side is tested on its own -- a line can
- * contribute actual hours without contributing estimated hours.
+ * and the actual do it independently. Of 218 in-house D&E lines, 54 carry a
+ * lump-sum *estimate* (estQty of 1 against six figures) and 36 of those still
+ * book real hours as their actual; a further 14 carry an *actual* that cannot
+ * be read as hours. So each side is tested on its own -- a line can contribute
+ * actual hours without contributing estimated hours.
  *
  * Getting this wrong is not cosmetic. Reading the estimate side uncritically
  * puts the estimated rate at $104/hr against a $59/hr actual, which invents a
