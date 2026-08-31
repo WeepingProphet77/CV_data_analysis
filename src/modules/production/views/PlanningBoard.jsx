@@ -17,6 +17,11 @@
  * alert and not a category: it has to stay legible whatever the cards are
  * currently tinted by, and it must never consume one of the eight validated
  * categorical slots (CLAUDE.md §5).
+ *
+ * Cards also carry a movement chip when a previous schedule is loaded to
+ * compare against (../movement.js) — how many days this piece slid since the
+ * last upload. Same reasoning: an arrow and a number, not a color, so it reads
+ * on a card that is already tinted and may already be flagged for a ticket.
  */
 import React, { useMemo, useState } from "react";
 import { Panel } from "../../../components/ui.jsx";
@@ -25,6 +30,7 @@ import { fmt, count, isoToDate } from "../../../core/format.js";
 import { daySpan, buildColumns } from "../board.js";
 import { colorMapFor, OTHER_COLOR, MAX_SERIES } from "../../../core/palette.js";
 import { ticketFor } from "../tickets.js";
+import { MoveChip } from "./Movement.jsx";
 import PieceDetail from "./PieceDetail.jsx";
 
 /** Cards can be tinted by any low-cardinality dimension the export carries. */
@@ -37,10 +43,11 @@ const COLOR_BY = [
 
 const MAX_DAYS = 70;   // a wider window stops being readable as a grid
 
-export default function PlanningBoard({ rows, plant, plants, onPlant, tickets }) {
+export default function PlanningBoard({ rows, plant, plants, onPlant, tickets, movement }) {
   const [colorById, setColorById] = useState("job");
   const [onlyWithData, setOnlyWithData] = useState(true);
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [onlyMoved, setOnlyMoved] = useState(false);
   const [selected, setSelected] = useState(null);
 
   /**
@@ -51,6 +58,15 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
   const ticketIdx = tickets ?? new Map();
   const hasTickets = ticketIdx.size > 0;
   const ticketOf = (r) => ticketFor(ticketIdx, r);
+
+  /**
+   * Per-row movement since the previous upload, keyed by the row object itself
+   * — see diffSchedule() for why a string key can't identify one instance of a
+   * repeated mark. Null when there is no baseline, which is the normal state
+   * after a clear or a first import.
+   */
+  const moveIdx = movement ?? null;
+  const hasMovement = Boolean(moveIdx && moveIdx.size);
 
   const colorBy = COLOR_BY.find((c) => c.id === colorById) ?? COLOR_BY[0];
 
@@ -91,6 +107,15 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
   const missingRows = useMemo(() => new Set(missing), [missing]);
   const missingPieces = useMemo(() => sumBy(missing, (r) => r.qty), [missing]);
 
+  /** Rows whose piece changed date, or is new, since the previous upload. */
+  const movedRows = useMemo(() => {
+    if (!hasMovement) return new Set();
+    return new Set(rows.filter((r) => {
+      const m = moveIdx.get(r);
+      return m && m.kind !== "same";
+    }));
+  }, [rows, moveIdx, hasMovement]);
+
   /** Bed rows, grouped by plant so "All plants" stays legible. */
   const bedRows = useMemo(() => {
     const beds = [...groupBy(rows, (r) => r.bedKey)].map(([bedKey, bucket]) => ({
@@ -105,16 +130,18 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
     // and with a handful of flagged pieces across 30 beds that is the whole
     // grid. Drop those rows; the ones that remain keep their real dates and
     // week columns, so a flagged piece still reads in context.
-    if (onlyMissing) {
-      const flaggedBeds = new Set([...missingRows].map((r) => r.bedKey));
-      kept = kept.filter((b) => flaggedBeds.has(b.bedKey));
+    if (onlyMissing || onlyMoved) {
+      const shownBeds = new Set(
+        [...(onlyMissing ? missingRows : []), ...(onlyMoved ? movedRows : [])].map((r) => r.bedKey)
+      );
+      kept = kept.filter((b) => shownBeds.has(b.bedKey));
     }
     return kept.sort(
       (a, b) =>
         a.plant.localeCompare(b.plant) ||
         a.bed.localeCompare(b.bed, undefined, { numeric: true, sensitivity: "base" })
     );
-  }, [rows, days, onlyWithData, onlyMissing, missingRows]);
+  }, [rows, days, onlyWithData, onlyMissing, onlyMoved, missingRows, movedRows]);
 
   /** One color per key, ranked by volume so the busiest jobs get slot 1..8. */
   const colors = useMemo(() => {
@@ -154,15 +181,22 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
     return <p className="muted" style={{ padding: 20 }}>Nothing scheduled in the current filters.</p>;
   }
 
-  if (onlyMissing && !bedRows.length) {
+  if ((onlyMissing || onlyMoved) && !bedRows.length) {
     return (
       <p className="muted" style={{ padding: 20 }}>
-        No scheduled piece in the current filters is missing its ticket.{" "}
-        <button className="btn ghost" onClick={() => setOnlyMissing(false)}>Show every piece</button>
-        <span style={{ display: "block", marginTop: 8, fontSize: 11 }}>
-          Check the Tickets tab first — if the ticket report doesn't cover these dates,
-          this means the report is silent about them, not that they are drawn.
-        </span>
+        {onlyMissing && onlyMoved
+          ? "No scheduled piece in the current filters is missing a ticket or has moved."
+          : onlyMissing
+            ? "No scheduled piece in the current filters is missing its ticket."
+            : "No scheduled piece in the current filters moved since the previous upload."}{" "}
+        <button className="btn ghost"
+                onClick={() => { setOnlyMissing(false); setOnlyMoved(false); }}>Show every piece</button>
+        {onlyMissing && (
+          <span style={{ display: "block", marginTop: 8, fontSize: 11 }}>
+            Check the Tickets tab first — if the ticket report doesn't cover these dates,
+            this means the report is silent about them, not that they are drawn.
+          </span>
+        )}
       </p>
     );
   }
@@ -204,11 +238,23 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
           </label>
         )}
 
+        {hasMovement && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--warning)", cursor: "pointer" }}>
+            <input type="checkbox" checked={onlyMoved} onChange={(e) => setOnlyMoved(e.target.checked)} />
+            Only pieces that moved
+          </label>
+        )}
+
         <span style={{ flex: 1 }} />
         <span className="muted" style={{ fontSize: 11 }}>
           {hasTickets && (
             <strong style={{ color: missingPieces ? "var(--critical)" : "var(--text-secondary)" }}>
               {count(missingPieces)} piece{missingPieces === 1 ? "" : "s"} missing a ticket ·{" "}
+            </strong>
+          )}
+          {hasMovement && (
+            <strong style={{ color: movedRows.size ? "var(--warning)" : "var(--text-secondary)" }}>
+              {count(movedRows.size)} moved ·{" "}
             </strong>
           )}
           {bedRows.length} beds · {days.length} days · {range.min} → {days[days.length - 1]}
@@ -303,11 +349,22 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
                         <td key={`d${col.iso}`} className={`day${dayTotals.has(col.iso) ? "" : " offday"}`}>
                           {cell?.map((r, j) => {
                             const noTicket = missingRows.has(r);
+                            // "same" carries a zero delta and would draw an
+                            // empty chip on every unmoved card; only a real
+                            // change earns the space.
+                            const raw = moveIdx?.get(r);
+                            const move = raw && raw.kind !== "same" ? raw : null;
                             // "Only missing" hides the rest of the pieces but
                             // keeps the bed rows, so a flagged piece stays in
                             // the bed and week it actually belongs to.
-                            if (onlyMissing && r.isPour && !noTicket) return null;
-                            if (onlyMissing && !r.isPour) return null;
+                            // The two filters are a union, not an intersection:
+                            // ticking both asks "show me anything that needs
+                            // attention", which is how a scheduler reads them.
+                            if (onlyMissing || onlyMoved) {
+                              if (!r.isPour) return null;
+                              const wanted = (onlyMissing && noTicket) || (onlyMoved && move);
+                              if (!wanted) return null;
+                            }
                             return r.isPour ? (
                               <button
                                 key={`${r.castNo}-${j}`}
@@ -321,6 +378,7 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
                               >
                                 <span className="jobno">{r.jobNo}</span>
                                 <span className="mark">{r.mark}</span>
+                                {move && <MoveChip days={move.days} kind={move.kind} />}
                                 {noTicket && <span className="tflag" aria-label="No piece ticket">NO TICKET</span>}
                                 <div className="meta">
                                   {count(Math.round(r.sf))} SF · {fmt(r.cy)} CY{r.pos ? ` · pos ${r.pos}` : ""}
@@ -360,11 +418,20 @@ export default function PlanningBoard({ rows, plant, plants, onPlant, tickets })
             pieces still waiting on a drawing flagged here.
           </>
         )}
+        {hasMovement && (
+          <>
+            {" "}<span className="mvchip up">▲2d</span> and <span className="mvchip back">▼2d</span> mark
+            a piece scheduled earlier or later than it was in the previous upload;{" "}
+            <span className="mvchip new">NEW</span> was not in it at all. See the{" "}
+            <strong>Moved</strong> tab for the full comparison.
+          </>
+        )}
       </p>
 
       {selected && (
         <PieceDetail piece={selected} siblings={siblings} related={related}
                      ticket={ticketOf(selected)} ticketsLoaded={hasTickets}
+                     move={moveIdx?.get(selected)}
                      onClose={() => setSelected(null)} onSelect={setSelected} />
       )}
     </div>

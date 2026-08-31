@@ -40,7 +40,7 @@ const Section = ({ title, children }) => (
 );
 
 export default function PieceDetail({
-  piece, siblings = [], related = [], ticket, ticketsLoaded = false, onClose, onSelect,
+  piece, siblings = [], related = [], ticket, ticketsLoaded = false, move, onClose, onSelect,
 }) {
   const ref = useRef(null);
   const [showEmpty, setShowEmpty] = useState(true);
@@ -95,6 +95,9 @@ export default function PieceDetail({
           {piece.pos ? <Badge>Pos {piece.pos}</Badge> : null}
           {piece.isPour ? null : <Badge tone="amber">No pieces</Badge>}
           {ticket && <Badge tone="red">No piece ticket</Badge>}
+          {move && move.kind === "later" && <Badge tone="amber">{move.days} days later</Badge>}
+          {move && move.kind === "earlier" && <Badge tone="green">{Math.abs(move.days)} days earlier</Badge>}
+          {move && move.kind === "added" && <Badge tone="blue">New this upload</Badge>}
         </div>
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(2, 1fr)", marginBottom: 4 }}>
@@ -108,6 +111,24 @@ export default function PieceDetail({
           <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
           Show fields that are empty for this piece
         </label>
+
+        {/* Not a column in either export — a comparison against the schedule
+            that was loaded before this one, so it says what it was measured
+            against rather than presenting itself as reported data. */}
+        {move && move.kind !== "same" && (
+          <Section title="Since the previous schedule">
+            <Row label="Moved"
+                 value={move.kind === "added"
+                   ? "New — not in the previous export"
+                   : `${Math.abs(move.days)} day${Math.abs(move.days) === 1 ? "" : "s"} ${move.days < 0 ? "earlier" : "later"}`} />
+            <Row label="Was scheduled" value={move.from || ""} />
+            <Row label="Now scheduled" value={move.to || ""} />
+            <Row label="Was on bed" value={move.fromBed || ""}
+                 raw={move.bedChanged ? "moved to a different bed" : undefined} />
+            <Row label="Was at plant" value={move.fromPlant || ""}
+                 raw={move.plantChanged ? "moved to a different plant" : undefined} />
+          </Section>
+        )}
 
         {/* The one field on this drawer that does not come from the schedule
             export. It is stated as a separate section, and the section says

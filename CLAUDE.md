@@ -40,7 +40,7 @@ Every change in this repo has gone through the same loop. Follow it:
 |---|---|
 | Live site | https://weepingprophet77.github.io/CV_data_analysis/ |
 | Repo | github.com/WeepingProphet77/CV_data_analysis (public) |
-| Modules | **Employee Time** built · **Production** built (schedule + missing tickets) · **Job Cost** built · **Schedule** placeholder |
+| Modules | **Employee Time** built · **Production** built (schedule + missing tickets + schedule movement) · **Job Cost** built · **Schedule** placeholder |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
 | Tests | five suites, all passing — `npm test` |
 | Real data | `ScheduledProdRptDtl.xls`, `MissingPieceMarkTicket.xlsx` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
@@ -85,6 +85,10 @@ shell may not pick that up, so prefix commands with
   different months. An unflagged board means "everything is drawn" *only* when
   the ticket report covers the same dates — which is why coverage is computed
   and stated rather than assumed (§11).
+- **The schedule export has no unique piece id.** Not `Cast No.`, not
+  `CTRL Num`, not `Pour No.`, not all of them together. Anything comparing two
+  uploads must key on job number + piece mark and align repeated instances by
+  date (§11). Don't reach for an id column; they were all checked.
 - **Every `$/SF` rate divides by the job square footage**, never by the area cast
   to date. Getting this wrong produces a rate that can't be compared to a budget
   (§13).
@@ -187,6 +191,7 @@ src/
       ticketParse.js           the Missing Piece Mark Ticket walker — pure ESM
       ticketFile.js            File -> ticket source; owns its lazy SheetJS import
       tickets.js               the join to the schedule, and coverage (plain ESM)
+      movement.js              upload-to-upload schedule diff (plain ESM)
     job-cost/                  built  — weekly job cost by plant (see §13)
       parse.js                 the report walker — pure ESM, node-importable
       importFile.js            File -> source; owns the lazy SheetJS import
@@ -272,7 +277,10 @@ reaching for it; a module fed by a single export should stay on `useDataset`.
 
 A module fed by **two different reports** — as production is, with the schedule
 and the missing-ticket report — keeps them as **two `useDataset` records** under
-distinct ids (`production`, `production-tickets`). They refresh independently,
+distinct ids (`production`, `production-tickets`). A module that needs to
+compare an import against the one it replaced keeps a third: capture the
+outgoing rows in the `onLoaded` handler, before `load` replaces them, and clear
+it whenever the data it describes is cleared (`production-baseline`, §11). They refresh independently,
 so one must never replace the other, and the second gets its own strip under
 `<DataBar>`. Before joining them, work out what they actually agree on: two
 reports from the same database still get pulled over different ranges, and
@@ -436,6 +444,12 @@ npm run test:render     # server-renders every view against the sample data
 working directory. They are gitignored, so CI only ever sees the synthetic
 samples — but locally they are the check that matters most.
 
+It also runs a **simulated re-upload** at real scale: the previous export is
+manufactured by shifting a known share of pieces by a known number of days, so
+the diff's answers are checked against figures the script chose rather than
+merely inspected. The alignment itself is checked against an exhaustive search
+over every order-preserving matching.
+
 For the ticket report it asserts the same **reconciliation** the job cost suite
 does: every plant and job banner's declared piece count must equal the rows
 walked under it, and the grand total must equal the rows read. A walker that
@@ -484,7 +498,7 @@ passing `month === null` to the calendar on first render, which threw in Chrome
 too. Treat a render failure as a real defect until proven otherwise.
 
 Where new tests go: `core/` logic → `smoke-test.mjs`; production schema, board,
-calendar or missing-ticket logic → `production-test.mjs`; job cost parsing, cost-code
+calendar, missing-ticket or schedule-movement logic → `production-test.mjs`; job cost parsing, cost-code
 classification or plant aliasing → `job-cost-test.mjs`; a new view → a case in
 `render-test.jsx`, including its empty and single-row states. The harnesses are
 hand-rolled on purpose — no test framework dependency.
@@ -581,6 +595,12 @@ company, the second can be picked up now.
 - [ ] **Two ticket rows have bed dates in 2023** and still have no drawing.
       Genuinely overdue, cancelled pieces still on the report, or a data
       artifact? Surfaced as their own urgency bucket until someone says (§11).
+- [ ] **Is there any stable per-piece identifier in Concrete Vision?** The
+      schedule export has none (§11), which forces the movement comparison to
+      align repeated marks by date. If `Cast No.` is in fact a stable database
+      id that merely repeats within one export for another reason, the matcher
+      could be exact instead. Worth asking whoever owns the report — it is the
+      single change that would most improve the Moved tab.
 - [ ] **Monroeville reports no quantity rows at all** — no pieces, no square
       feet, across all 15 jobs. Every other plant has them. A setting, or does
       that plant genuinely not track them? Until answered, its $/SF and design
@@ -637,6 +657,10 @@ company, the second can be picked up now.
 - [x] Whether two reports' date ranges overlapping means they cover the same
       work — **no**. Measure it in rows, not endpoints; two stale rows made a
       pair of reports sharing nothing look like a 31-day overlap (§11).
+- [x] Whether the schedule export carries a unique row or piece id — **no**,
+      every candidate checked and tabulated (§11). Don't look again.
+- [x] How to compare two uploads without one — job number + piece mark, with
+      repeated instances aligned by minimum total movement (§11).
 - [x] Cross-module join — cost↔production on job **number**, not name (§13).
 - [x] What `$/SF` should divide by — the job square footage, never area cast to
       date (§13). Getting this wrong produces a rate that cannot be compared to
@@ -706,6 +730,7 @@ One row = **one scheduled piece on one bed on one date at one plant**.
 | `Jobs.jsx` | **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
 | `Pieces.jsx` | **Pieces** | The searchable, sortable detail table, capped at 300 rows a page. |
 | `Tickets.jsx` + `TicketBar.jsx` | **Tickets** | The Missing Piece Mark Ticket report — see below. |
+| `Movement.jsx` + `BaselineBar.jsx` | **Moved** | What moved since the previous upload — see below. Only offered once a baseline exists. |
 
 Filters shared across tabs: date window, plant, job, plus the app-wide
 **My Projects** scope (§14), which narrows the row pool before anything else.
@@ -891,11 +916,103 @@ and a running count in the board header.
 owns the drawings, so it gets its own stat tile and its own bucket in the
 by-drafter table rather than being folded into a total.
 
+### Schedule movement, upload to upload
+
+When a new Scheduled Production Report replaces the one already loaded, the old
+dates are kept as a compact snapshot (`production-baseline`) and every piece is
+compared against it: moved up, moved back, added, dropped. Profiled and built
+2026-08-31. `movement.js` holds all of it as plain ESM.
+
+**Clearing the schedule clears the baseline.** A baseline outliving the data it
+described would compare a fresh import against a file nobody remembers loading.
+Asserted in `test:storage`.
+
+#### There is no piece id in this export — every candidate was checked
+
+| Candidate | Distinct over 4,358 rows |
+|---|---|
+| `Cast No.` | 2,347 |
+| `CTRL Num` | 1,343 (and blank on 781 rows) |
+| `Pour No.` | 1,171 |
+| `Cast No.` + `CTRL Num` | 4,328 |
+| `Plant` + `Bed` + `Date` + `Pos` | 3,890 |
+
+**Nothing is unique.** So a row-level join across two uploads is unavailable at
+any price, and the cross-pull stability of those identifiers cannot even be
+tested — there is nothing to test it against. Don't go looking again; this table
+is the result of looking.
+
+What the export does support is a **piece** key: job number + piece mark. 1,669
+such groups, and **1,412 of them (85%) hold exactly one instance**, so for the
+large majority the comparison is exact. The job number is required because 45
+marks are used by more than one job. No group spans more than one plant.
+
+#### Repeated marks, and the alignment
+
+The other 257 groups hold the same mark scheduled several times — up to 99 — a
+piece *type* cast repeatedly rather than one piece. Those instances carry no id
+either, so `alignInstances` matches them by date, choosing the order-preserving
+pairing that **minimises total movement**.
+
+Minimising is the honest reading, and it differs from the obvious shortcut —
+pair by rank, truncate the longer side — exactly where instances were added or
+removed. Old `[Aug 3, Aug 10, Aug 20]` against new `[Aug 10]`: rank pairing
+reports a 7-day slip; the alignment matches Aug 10 to Aug 10, reports nothing
+moved and two instances dropped, which is what the dates actually say. Where the
+counts are equal the pairing is forced and both agree.
+
+Matches are maximised before movement is minimised, so a piece is assumed to
+persist and slide rather than vanish and be replaced — the right default for a
+schedule, where the piece list is stable and the dates are what move.
+
+**The count of moves is not bounded by the change that occurred; the total
+movement is.** Shifting one instance of a repeated mark re-sorts its group, and
+the alignment may then explain the same change as several smaller slides. That
+reports *more* moves while reporting no *more total* movement. A test asserting
+on the count fails here — which is how this was found — so `production-test.mjs`
+asserts on total movement, and the UI says a single reschedule can read as
+several smaller ones. Verified against an exhaustive search: the alignment is
+provably minimal, and over 20,000 randomised cases it never reported more total
+movement than was injected.
+
+#### What the diff returns, and why `byRow` is keyed on the row object
+
+`diffSchedule(baselineRows, currentRows)` returns `moved` / `added` / `removed`
+/ `unchanged`, per-job roll-ups, and **`byRow`, a `Map` keyed by the current row
+object itself**. Within a repeated mark the instances are told apart only by
+their position in the alignment, so any string key would have to encode that
+position and would break the moment two instances shared a date. The board and
+the report both read from the same `rows` array in the same render pass, so
+object identity is exactly the right key and costs no lookup. Don't "clean this
+up" into a string key.
+
+Invariants, all tested: `moved + added + unchanged` accounts for every current
+piece exactly once; `byRow` covers every one and holds no extras; an identical
+re-upload reports zero moved, added and removed; reversing the two sides flips
+every sign. Rows with no piece mark are bed activity, not pieces, and never
+enter the snapshot.
+
+Cost at real scale: 3,577 pieces compared in ~37ms, baseline snapshot ~511KB.
+
+#### On the board
+
+A moved piece gets a `▲3d` / `▼3d` chip, a new one `NEW`. Direction is a glyph
+and a number, never color alone — these sit on cards already tinted by job and
+possibly ringed for a missing ticket, so the status tokens (`--good`,
+`--warning`) are used and no categorical slot is consumed (§5). An unmoved piece
+gets no chip; a zero on every card would make "moved" meaningless.
+
+"Only pieces that moved" and "only pieces missing a ticket" are a **union**, not
+an intersection: ticking both asks "show me anything that needs attention",
+which is how a scheduler reads them. Beds with nothing to show drop out.
+
 #### Visual review status
 
 **Nothing added on 2026-08-31 has been looked at** — the Tickets tab, the
 missing-ticket strip and coverage notices, the board's NO TICKET marker and its
-"only missing" filter, and the star column on the production Jobs table. There
+"only missing" filter, the star column on the production Jobs table, and the
+whole schedule-movement feature (the Moved tab, the "compared against" strip,
+the board's movement chips and "only pieces that moved" filter). There
 is no browser automation here (§7). The board marker is the piece most likely to
 need adjusting: it sits on a card that is already carrying a color-by border, a
 job number, a mark and a metrics line, in a cell that can hold several cards.

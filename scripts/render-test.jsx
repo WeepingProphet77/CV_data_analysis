@@ -35,6 +35,9 @@ import TicketBar, { TicketDrop, CoverageNotice } from "../src/modules/production
 import { buildTicketSource } from "../src/modules/production/ticketParse.js";
 import { ticketIndex, ticketCoverage } from "../src/modules/production/tickets.js";
 import { ticketSheet } from "./production-ticket-sample.mjs";
+import ProdMovement from "../src/modules/production/views/Movement.jsx";
+import BaselineBar from "../src/modules/production/views/BaselineBar.jsx";
+import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
 import JobCostModule from "../src/modules/job-cost/index.jsx";
 import JcPortfolio from "../src/modules/job-cost/views/Portfolio.jsx";
 import JcJobs from "../src/modules/job-cost/views/Jobs.jsx";
@@ -101,6 +104,24 @@ const ticketSource = buildTicketSource(
   }]),
   { fileName: "tickets.sample.xlsx" }
 );
+/*
+ * A "previous upload" for the movement report: the same sample with a share of
+ * the pieces shifted, some withheld so they read as new, and one invented so it
+ * reads as dropped.
+ */
+const prodBaseline = snapshotOf(
+  prodRows
+    .filter((_, i) => i % 37 !== 0)
+    .map((r, i) => {
+      if (!r.mark || !r.date) return r;
+      if (i % 11 === 0) return { ...r, date: `2026-0${r.date[6] === "8" ? "8" : "8"}-${String(((+r.date.slice(8) + 3) % 28) + 1).padStart(2, "0")}` };
+      return r;
+    })
+).concat([{ jobNo: prodRows[0].jobNo, job: prodRows[0].job, mark: "ZZ-DROPPED", date: prodRows[0].date, plant: prodRows[0].plant, bed: prodRows[0].bed, qty: 1 }]);
+const prodDiff = diffSchedule(prodBaseline, prodRows);
+const prodBaselineMeta = { fileName: "ScheduledProdRptDtl-prev.xls", fileDate: "2026-08-18", replacedOn: "2026-08-31", rowCount: prodBaseline.length };
+const prodNoDiff = diffSchedule(snapshotOf(prodRows), prodRows);
+
 const prodTicketIdx = ticketIndex(ticketSource.rows);
 const prodCoverage = ticketCoverage(prodRows, ticketSource.rows);
 // A report whose dates miss the schedule entirely — the state the coverage
@@ -176,6 +197,9 @@ const cases = [
   ["Production module", <ProductionModule />, { allowEmpty: true }],
   ["Prod / Board", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
   ["Prod / Board + tickets", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} />],
+  ["Prod / Board + movement", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodDiff.byRow} />],
+  ["Prod / Board + tickets and movement", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} movement={prodDiff.byRow} />],
+  ["Prod / Board + movement, nothing moved", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodNoDiff.byRow} />],
   ["Prod / Board + empty ticket index", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={new Map()} />],
   ["Prod / Board + tickets, none matching", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={ticketIndex([{ jobNo: "00000", mark: "NOPE", key: "00000|NOPE" }])} />],
   ["Prod / Board (1 plant)", <PlanningBoard rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
@@ -196,6 +220,14 @@ const cases = [
   ["Prod / Tickets no schedule loaded", <ProdTickets ticketRows={ticketSource.rows} coverage={ticketCoverage([], ticketSource.rows)} scheduledJobNos={new Set()} today="2026-08-10" onOpenJob={noop} />],
   ["Prod / TicketBar", <TicketBar source={ticketSource} coverage={prodCoverage} onSource={noop} onClear={noop} />],
   ["Prod / TicketDrop", <TicketDrop onSource={noop} />],
+  ["Prod / Movement", <ProdMovement diff={prodDiff} baselineMeta={prodBaselineMeta} currentMeta={{ fileName: "ScheduledProdRptDtl.xls" }} mine={prodMine} onOpenJob={noop} />],
+  ["Prod / Movement, nothing moved", <ProdMovement diff={prodNoDiff} baselineMeta={prodBaselineMeta} currentMeta={{ fileName: "x.xls" }} mine={prodMine} onOpenJob={noop} />],
+  ["Prod / Movement, no stars", <ProdMovement diff={prodDiff} baselineMeta={prodBaselineMeta} currentMeta={{}} onOpenJob={noop} />],
+  ["Prod / Movement, no baseline", <ProdMovement diff={diffSchedule([], prodRows)} baselineMeta={null} currentMeta={{}} onOpenJob={noop} />],
+  ["Prod / BaselineBar", <BaselineBar meta={prodBaselineMeta} stats={prodDiff.stats} onDiscard={noop} />],
+  ["Prod / BaselineBar, nothing moved", <BaselineBar meta={prodBaselineMeta} stats={prodNoDiff.stats} onDiscard={noop} />],
+  ["Prod / BaselineBar, no meta", <BaselineBar meta={null} stats={null} onDiscard={noop} />, { allowEmpty: true }],
+  ["Prod / PieceDetail moved", <PieceDetail piece={prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0]} siblings={[]} move={prodDiff.byRow.get(prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0])} onClose={noop} onSelect={noop} />],
   ["Prod / CoverageNotice (windows miss)", <CoverageNotice coverage={prodCoverageMiss} />],
   ["Prod / CoverageNotice (none loaded)", <CoverageNotice coverage={ticketCoverage(prodRows, [])} />, { allowEmpty: true }],
   ["Prod / Pieces", <ProdPieces rows={prodRows} search="" />],
@@ -320,6 +352,56 @@ if (/noticket|tflag/.test(unflagged)) {
   console.log("FAIL   board without a ticket report flags nothing");
 } else {
   console.log("  ok   board without tickets flags none");
+}
+
+// The movement chip must reach the card, and must NOT appear on a board with no
+// baseline — a chip on every card would make "moved" meaningless.
+// Only the grid counts: the footnote carries a legend of the same chips, and
+// counting those would let a board that draws none still pass.
+const gridOf = (html) => html.split("</table>")[0];
+const movedHtml = renderToString(
+  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodDiff.byRow} />
+);
+const movedGrid = gridOf(movedHtml);
+const upChips = (movedGrid.match(/class="mvchip up"/g) || []).length;
+const backChips = (movedGrid.match(/class="mvchip back"/g) || []).length;
+const newChips = (movedGrid.match(/class="mvchip new"/g) || []).length;
+if (upChips + backChips === 0 || newChips === 0) {
+  failures++;
+  console.log(`FAIL   board drew movement chips (up=${upChips}, back=${backChips}, new=${newChips})`);
+} else {
+  console.log(`  ok   board drew movement chips     ${upChips} earlier, ${backChips} later, ${newChips} new`);
+}
+
+// A chip carries an arrow and a day count, so it survives being read without
+// color — the board already spends color on the job and on missing tickets.
+if (!/▲|▼/.test(movedGrid)) {
+  failures++;
+  console.log("FAIL   movement chips carry a direction glyph, not color alone");
+} else {
+  console.log("  ok   movement chips are not color-alone");
+}
+
+const noBaselineHtml = renderToString(
+  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />
+);
+if (/mvchip/.test(noBaselineHtml)) {
+  failures++;
+  console.log("FAIL   board with no baseline draws no movement chip");
+} else {
+  console.log("  ok   no baseline, no movement chips");
+}
+
+// An unchanged piece must not get a zero chip; only a real change earns space.
+const calmHtml = renderToString(
+  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodNoDiff.byRow} />
+);
+const calmChips = (gridOf(calmHtml).match(/class="mvchip/g) || []).length;
+if (calmChips > 0) {
+  failures++;
+  console.log(`FAIL   an unmoved piece draws no chip (${calmChips} in the grid)`);
+} else {
+  console.log("  ok   unmoved pieces draw no chip   legend still shown");
 }
 
 // The coverage notice is the one thing that must never be silent when the two

@@ -15,6 +15,8 @@ import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { libraryKey } from "../src/core/library.js";
 import { prefKey } from "../src/core/persisted.js";
+import { storeKey } from "../src/core/store.js";
+import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
 import { isValidSelection, toggleMember } from "../src/core/myProjects.js";
 import { readRecord, writeRecord } from "../src/core/store.js";
 import { buildSource } from "../src/modules/job-cost/parse.js";
@@ -178,6 +180,53 @@ ok("the old key is gone, so the migration runs once",
 ok("toggling adds and removes one job number",
    toggleMember(["43134"], "45154").join() === "43134,45154" &&
    toggleMember(["43134", "45154"], "43134").join() === "45154");
+
+/*
+ * The schedule baseline. It is a third record in the production module, and the
+ * rules that matter are: it survives a reload, it is separate from the schedule
+ * it describes, and clearing the schedule takes it with it — a baseline that
+ * outlived its data would compare a fresh import against a file nobody
+ * remembers loading.
+ */
+console.log("\nSchedule movement baseline");
+const schedKey = storeKey("production");
+const baseKey = storeKey("production-baseline");
+const tickKey = storeKey("production-tickets");
+ok("the baseline is its own record",
+   baseKey !== schedKey && baseKey !== tickKey, `${baseKey} vs ${schedKey}`);
+
+const mkRow = (mark, date) => ({
+  jobNo: "43134", job: "43134 - JOB", jobTitle: "JOB", mark, date,
+  plant: "P1", bed: "Pad 1", qty: 1,
+});
+const oldSched = [mkRow("A", "2026-08-05"), mkRow("B", "2026-08-06")];
+const newSched = [mkRow("A", "2026-08-05"), mkRow("B", "2026-08-13")];
+
+await writeRecord(baseKey, { rows: snapshotOf(oldSched), meta: { fileName: "prev.xls", rowCount: 2 } });
+await writeRecord(schedKey, { rows: newSched, meta: { fileName: "new.xls" } });
+
+const savedBase = await readRecord(baseKey, (v) => Array.isArray(v?.rows));
+ok("the baseline round-trips", savedBase?.rows.length === 2 && savedBase.meta.fileName === "prev.xls");
+
+// The comparison must survive a reload, not just the upload that created it.
+const reloaded = diffSchedule(savedBase.rows, newSched);
+ok("the comparison still works after a reload",
+   reloaded.ready && reloaded.moved.length === 1 && reloaded.moved[0].days === 7,
+   JSON.stringify(reloaded.moved.map((m) => m.days)));
+
+// Only what the comparison needs is stored — a full second copy of the export
+// would double the module's footprint for nothing.
+const full = JSON.stringify(newSched).length;
+const snap = JSON.stringify(snapshotOf(newSched)).length;
+ok("the snapshot is smaller than a full copy of the rows", snap < full, `${snap} vs ${full} bytes`);
+
+// The user's own words: cleared data means the comparison is gone.
+await idbDel(schedKey);
+await idbDel(baseKey);
+ok("clearing the schedule leaves no baseline behind",
+   (await idbGet(baseKey)) === undefined && (await idbGet(schedKey)) === undefined);
+ok("a diff with no baseline is not ready, rather than empty-but-ready",
+   diffSchedule([], newSched).ready === false);
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll persistence checks passed.\n`);
 process.exit(failures ? 1 : 0);

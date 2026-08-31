@@ -395,6 +395,21 @@ tr.clickable:hover { background: rgba(0, 220, 255, 0.10); box-shadow: inset 2px 
   vertical-align: 1px; white-space: nowrap;
 }
 
+/* Schedule movement -----------------------------------------------------
+   An arrow and a day count, so the meaning survives without the color —
+   these sit on cards that may already be tinted by job and ringed for a
+   missing ticket. Status tokens only, never a series color (§5). */
+.mvchip {
+  display: inline-block; margin-left: 5px; padding: 0 3px;
+  border: 1px solid currentColor; border-radius: 2px;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .3px; line-height: 1.5;
+  vertical-align: 1px; white-space: nowrap;
+}
+.mvchip.up   { color: #4fd3a4; background: rgba(25, 158, 112, 0.16); }
+.mvchip.back { color: #ecb84a; background: rgba(201, 133, 0, 0.18); }
+.mvchip.new  { color: var(--text-secondary); background: transparent; border-color: var(--rule); }
+.mvchip.gone { color: #f09393; background: rgba(230, 103, 103, 0.14); text-decoration: line-through; }
+
 /* Piece detail drawer -------------------------------------------------- */
 
 .drawer-backdrop {

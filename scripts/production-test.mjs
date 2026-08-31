@@ -16,6 +16,7 @@ import { monthsIn, weeksOf } from "../src/core/calendar.js";
 import { buildColumns, daySpan } from "../src/modules/production/board.js";
 import { buildTicketSource, parseJobBanner, parsePlantBanner, ticketKeyOf } from "../src/modules/production/ticketParse.js";
 import { ticketIndex, ticketFor, ticketCoverage, byJob, byDrafter, urgency } from "../src/modules/production/tickets.js";
+import { alignInstances, diffSchedule, snapshotOf, movementByJob, pieceKeyOf, dayDelta } from "../src/modules/production/movement.js";
 import { ticketSheet, sampleTicketSheet, AUG_1 } from "./production-ticket-sample.mjs";
 
 let failures = 0;
@@ -292,6 +293,170 @@ eq("buckets split by how soon the piece is cast",
    [["past", 1], ["week", 3], ["month", 3]]);
 ok("no bucket is NaN", ub.every((b) => Number.isFinite(b.pieces)));
 
+/* -- Schedule movement between two uploads ------------------------------ */
+
+const pc = (jobNo, mark, date, extra = {}) => ({
+  jobNo, job: `${jobNo} - JOB ${jobNo}`, jobTitle: `JOB ${jobNo}`,
+  mark, date, plant: "P1", bed: "Pad 1", qty: 1, ...extra,
+});
+
+console.log("\nMovement — instance alignment");
+const align = (p, n) => {
+  const r = alignInstances(p, n);
+  return {
+    pairs: r.pairs.map(([i, j]) => [p[i], n[j]]),
+    prevOnly: r.prevOnly.map((i) => p[i]),
+    nextOnly: r.nextOnly.map((j) => n[j]),
+  };
+};
+eq("equal counts pair in order",
+   align(["2026-08-05", "2026-08-12"], ["2026-08-07", "2026-08-19"]).pairs,
+   [["2026-08-05", "2026-08-07"], ["2026-08-12", "2026-08-19"]]);
+// The reason the alignment is a DP and not a zip. Pairing by rank would call
+// this a 7-day slip; matching Aug 10 to Aug 10 says nothing moved and two
+// instances were dropped, which is what the dates actually support.
+eq("surplus is dropped rather than forced into a move",
+   align(["2026-08-03", "2026-08-10", "2026-08-20"], ["2026-08-10"]),
+   { pairs: [["2026-08-10", "2026-08-10"]], prevOnly: ["2026-08-03", "2026-08-20"], nextOnly: [] });
+eq("surplus on the new side becomes additions",
+   align(["2026-08-10"], ["2026-08-03", "2026-08-10", "2026-08-20"]).nextOnly,
+   ["2026-08-03", "2026-08-20"]);
+eq("an empty previous side matches nothing",
+   align([], ["2026-08-01"]), { pairs: [], prevOnly: [], nextOnly: ["2026-08-01"] });
+eq("an empty new side matches nothing",
+   align(["2026-08-01"], []), { pairs: [], prevOnly: ["2026-08-01"], nextOnly: [] });
+ok("the pairing is always as large as the shorter side",
+   [[1, 1], [3, 1], [1, 3], [4, 4], [2, 5]].every(([a, b]) => {
+     const P = Array.from({ length: a }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`);
+     const N = Array.from({ length: b }, (_, i) => `2026-09-${String(i + 1).padStart(2, "0")}`);
+     return alignInstances(P, N).pairs.length === Math.min(a, b);
+   }));
+
+// The DP must actually be optimal, not merely plausible. Checked against an
+// exhaustive search over every order-preserving matching.
+console.log("\nMovement — alignment is provably minimal");
+const isoOf = (d) => new Date(Date.UTC(2026, 7, 1 + d)).toISOString().slice(0, 10);
+function bruteCost(P, N) {
+  const k = Math.min(P.length, N.length);
+  let best = Infinity;
+  const rec = (i, j, n, cost) => {
+    if (n === k) { best = Math.min(best, cost); return; }
+    if (i >= P.length || j >= N.length) return;
+    rec(i + 1, j + 1, n + 1, cost + Math.abs(dayDelta(P[i], N[j])));
+    rec(i + 1, j, n, cost);
+    rec(i, j + 1, n, cost);
+  };
+  rec(0, 0, 0, 0);
+  return best;
+}
+let mism = 0;
+let seed = 7;
+const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+for (let t = 0; t < 600; t++) {
+  const mk = () => [...new Set(Array.from({ length: 1 + Math.floor(rnd() * 5) },
+    () => Math.floor(rnd() * 18)))].sort((a, b) => a - b).map(isoOf);
+  const P = mk(), N = mk();
+  const r = alignInstances(P, N);
+  const cost = r.pairs.reduce((a, [i, j]) => a + Math.abs(dayDelta(P[i], N[j])), 0);
+  if (cost !== bruteCost(P, N)) mism++;
+}
+ok("matches an exhaustive search over 600 random cases", mism === 0, `${mism} mismatches`);
+
+console.log("\nMovement — the diff");
+const prevSched = [
+  pc("43134", "RM101", "2026-08-05"),
+  pc("43134", "RM102", "2026-08-06"),
+  pc("43134", "RM103", "2026-08-07"),
+  pc("45154", "RC-01", "2026-08-10"),
+  pc("45154", "GONE", "2026-08-11"),
+];
+const nextSched = [
+  pc("43134", "RM101", "2026-08-05"),              // unchanged
+  pc("43134", "RM102", "2026-08-12"),              // 6 days later
+  pc("43134", "RM103", "2026-08-04"),              // 3 days earlier
+  pc("45154", "RC-01", "2026-08-10", { bed: "Pad 9" }),   // same day, new bed
+  pc("45154", "BRAND-NEW", "2026-08-14"),          // added
+];
+const mv = diffSchedule(snapshotOf(prevSched), nextSched);
+ok("a baseline makes the diff ready", mv.ready);
+eq("unchanged pieces counted, not reported as moves", mv.unchanged, 2);
+eq("moves found", mv.moved.map((m) => [m.row.mark, m.days]).sort(), [["RM102", 6], ["RM103", -3]]);
+eq("a later date is a positive delta", mv.moved.find((m) => m.row.mark === "RM102").days, 6);
+eq("an earlier date is a negative delta", mv.moved.find((m) => m.row.mark === "RM103").days, -3);
+eq("additions found", mv.added.map((a) => a.row.mark), ["BRAND-NEW"]);
+eq("removals found", mv.removed.map((r) => r.prev.mark), ["GONE"]);
+eq("an addition has no from-date and no day count",
+   [mv.added[0].from, mv.added[0].days], [null, null]);
+ok("a bed change on an unmoved piece is still noticed",
+   mv.byRow.get(nextSched[3])?.bedChanged === true);
+eq("stats agree with the lists",
+   [mv.stats.moved, mv.stats.added, mv.stats.removed, mv.stats.unchanged],
+   [mv.moved.length, mv.added.length, mv.removed.length, mv.unchanged]);
+ok("no stat is NaN or Infinity", Object.values(mv.stats).every(Number.isFinite));
+
+console.log("\nMovement — the invariants that matter");
+// Every piece in the new export must be accounted for exactly once, or the
+// board would draw a chip on a card the report never mentions (or the reverse).
+const marked = nextSched.filter((r) => r.mark && r.date).length;
+eq("moved + added + unchanged accounts for every current piece",
+   mv.moved.length + mv.added.length + mv.unchanged, marked);
+ok("byRow holds an entry for every current piece",
+   nextSched.every((r) => mv.byRow.has(r)));
+eq("byRow holds no more than that", mv.byRow.size, marked);
+ok("byRow is keyed on the row object the board renders",
+   mv.byRow.get(nextSched[1])?.days === 6);
+// Re-uploading the same file is the commonest case after a mistake; it must
+// report calm, not churn.
+const same = diffSchedule(snapshotOf(nextSched), nextSched);
+eq("an identical re-upload reports nothing moved",
+   [same.moved.length, same.added.length, same.removed.length], [0, 0, 0]);
+eq("...and counts every piece as unchanged", same.unchanged, marked);
+// Reversing the two sides must mirror the signs, or the direction is arbitrary.
+const rev = diffSchedule(snapshotOf(nextSched), prevSched);
+eq("reversing the comparison flips every sign",
+   rev.moved.map((m) => [m.row.mark, m.days]).sort(), [["RM102", -6], ["RM103", 3]]);
+
+console.log("\nMovement — no baseline");
+eq("no baseline is not 'nothing moved'",
+   [diffSchedule([], nextSched).ready, diffSchedule(snapshotOf(prevSched), []).ready], [false, false]);
+eq("an unready diff carries empty lists, not undefined",
+   [diffSchedule([], nextSched).moved.length, diffSchedule([], nextSched).byRow.size], [0, 0]);
+
+console.log("\nMovement — repeated marks");
+// 257 of 1,669 job|mark groups in the real export hold several instances.
+const repPrev = [pc("1", "M", "2026-08-03"), pc("1", "M", "2026-08-10"), pc("1", "M", "2026-08-17")];
+const repNext = [pc("1", "M", "2026-08-04"), pc("1", "M", "2026-08-10"), pc("1", "M", "2026-08-24")];
+const repDiff = diffSchedule(snapshotOf(repPrev), repNext);
+eq("each instance of a repeated mark gets its own verdict",
+   repNext.map((r) => repDiff.byRow.get(r).days), [1, 0, 7]);
+eq("...and the unmoved instance is not reported as a move", repDiff.moved.length, 2);
+
+console.log("\nMovement — what is not a piece");
+// Bed activity carries no mark; it is not a piece and cannot be tracked.
+const withActivity = [...nextSched, { jobNo: "43134", job: "x", mark: "", date: "2026-08-05", plant: "P1", bed: "Pad 2", qty: 0 }];
+eq("rows with no mark are excluded from the snapshot",
+   snapshotOf(withActivity).length, nextSched.length);
+eq("...and never appear in the diff",
+   diffSchedule(snapshotOf(prevSched), withActivity).byRow.size, marked);
+eq("a row with no date is excluded too",
+   snapshotOf([pc("1", "M", "")]).length, 0);
+// 45 marks in the real export are shared across jobs, so the key must carry both.
+ok("the piece key separates the same mark on different jobs",
+   pieceKeyOf("43134", "RM101") !== pieceKeyOf("45154", "RM101"));
+eq("the key is case-insensitive on the mark",
+   pieceKeyOf("43134", " rm101 "), pieceKeyOf("43134", "RM101"));
+
+console.log("\nMovement — per-job roll-up");
+const mj = movementByJob(mv);
+eq("roll-up conserves moves", mj.reduce((a, g) => a + g.moved, 0), mv.moved.length);
+eq("roll-up conserves additions", mj.reduce((a, g) => a + g.added, 0), mv.added.length);
+eq("roll-up conserves removals", mj.reduce((a, g) => a + g.removed, 0), mv.removed.length);
+ok("net movement is signed, so a job that cancels out reads as flat",
+   Math.abs(mj.find((g) => g.jobNo === "43134").net - 1.5) < 1e-9,
+   String(mj.find((g) => g.jobNo === "43134").net));
+ok("no roll-up figure is NaN",
+   mj.every((g) => [g.moved, g.added, g.removed, g.avgAbs, g.net, g.changed].every(Number.isFinite)));
+
 const REAL = "ScheduledProdRptDtl.xls";
 if (existsSync(REAL)) {
   console.log("\nReal export (local only — gitignored)");
@@ -311,6 +476,81 @@ if (existsSync(REAL)) {
               `${Math.round(sumBy(r.rows, (x) => x.sf)).toLocaleString()} SF · ` +
               `${new Set(r.rows.map((x) => `${x.bedKey}|${x.date}`)).size} bed-days · ` +
               `${distinct(r.rows, (x) => x.plant).length} plants`);
+
+  /*
+   * A simulated re-upload, at real scale. There is only ever one export on
+   * disk, so the previous one is manufactured by shifting a known share of
+   * pieces by a known number of days — which means the diff's answers can be
+   * checked against numbers this script chose, not merely inspected.
+   */
+  console.log("\nReal export — simulated re-upload");
+  const shiftIso = (iso, n) => {
+    const t = new Date(`${iso}T00:00:00Z`);
+    t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  };
+  let rs = 99;
+  const rr = () => (rs = (rs * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  // Every 109th row is withheld from the baseline, so it must come back as an
+  // addition; a tenth of the rest is shifted each way by a bounded amount.
+  let injectedDays = 0;
+  const prevReal = r.rows.filter((_, i) => i % 109 !== 0).map((x) => {
+    if (!x.mark || !x.date) return x;
+    const u = rr();
+    // The baseline is shifted the opposite way to the effect on the new file:
+    // moving the OLD date later means the piece is now EARLIER than it was.
+    if (u < 0.10) { const n = 1 + Math.floor(rr() * 9); injectedDays += n; return { ...x, date: shiftIso(x.date, n) }; }
+    if (u < 0.20) { const n = 1 + Math.floor(rr() * 5); injectedDays += n; return { ...x, date: shiftIso(x.date, -n) }; }
+    return x;
+  });
+
+  const snap = snapshotOf(prevReal);
+  const t0 = Date.now();
+  const rd = diffSchedule(snap, r.rows);
+  const ms = Date.now() - t0;
+
+  const realPieces = r.rows.filter((x) => x.mark && x.date).length;
+  eq("every current piece is accounted for exactly once",
+     rd.moved.length + rd.added.length + rd.unchanged, realPieces);
+  ok("byRow covers every current piece", r.rows.filter((x) => x.mark && x.date).every((x) => rd.byRow.has(x)));
+  eq("byRow holds no extra entries", rd.byRow.size, realPieces);
+  ok("no movement figure is NaN", Object.values(rd.stats).every(Number.isFinite));
+  ok("every reported move is a nonzero whole number of days",
+     rd.moved.every((m) => Number.isInteger(m.days) && m.days !== 0));
+  // The shifts were bounded at 9 earlier and 5 later, so anything outside that
+  // band means instances were mis-aligned rather than merely moved.
+  ok("no move exceeds the shift that was injected",
+     rd.moved.every((m) => m.days >= -9 && m.days <= 5),
+     `range ${Math.min(...rd.moved.map((m) => m.days))}..${Math.max(...rd.moved.map((m) => m.days))}`);
+  /*
+   * Total movement, not the count of moves, is what minimality bounds — and
+   * the distinction is real rather than pedantic. Where a mark is scheduled
+   * several times, shifting one instance re-sorts the group, and the alignment
+   * then explains the same change as several smaller slides. That reports MORE
+   * moves than were injected while reporting no more total movement, which is
+   * the alignment doing exactly its job. Asserting on the count instead fails
+   * here, which is how this was found.
+   */
+  const reportedDays = rd.moved.reduce((a, m) => a + Math.abs(m.days), 0);
+  ok("total movement never exceeds what was injected",
+     reportedDays <= injectedDays, `${reportedDays} reported vs ${injectedDays} injected`);
+  ok("every move stays within the injected band",
+     rd.moved.every((m) => m.days >= -9 && m.days <= 5));
+  ok("the per-job roll-up conserves every change",
+     movementByJob(rd).reduce((a, g) => a + g.changed, 0) ===
+       rd.moved.length + rd.added.length + rd.removed.length);
+  // Re-uploading the identical file is the commonest real case; at this scale
+  // it is also the strongest check that nothing is spuriously matched.
+  const idem = diffSchedule(snapshotOf(r.rows), r.rows);
+  eq("an identical re-upload of the real export reports no change",
+     [idem.moved.length, idem.added.length, idem.removed.length], [0, 0, 0]);
+  eq("...and every piece as unchanged", idem.unchanged, realPieces);
+
+  console.log(`        ${realPieces} pieces compared in ${ms}ms · ` +
+              `${rd.stats.earlier} earlier, ${rd.stats.later} later, ` +
+              `${rd.stats.added} new, ${rd.stats.removed} dropped, ${rd.unchanged} unchanged`);
+  console.log(`        baseline snapshot ${snap.length} rows, ` +
+              `~${Math.round(JSON.stringify(snap).length / 1024)}KB stored`);
 } else {
   console.log("\n  --  real export not present; skipped (expected in CI)");
 }
