@@ -1,0 +1,197 @@
+/**
+ * The missing-ticket import strip, and the empty state that invites the file.
+ *
+ * The production module holds two exports at once — the schedule and this one —
+ * so DataBar (which describes "the" loaded file) can't serve both. This strip
+ * sits under it and owns the second file on its own terms: its own range, its
+ * own replace, its own clear.
+ */
+import React, { useCallback, useRef, useState } from "react";
+import { Badge } from "../../../components/ui.jsx";
+import { ErrorBox } from "../../../components/FileImport.jsx";
+import { readTicketFile } from "../ticketFile.js";
+import { count } from "../../../core/format.js";
+
+const ACCEPT = ".xlsx,.xls";
+
+function useTicketImport(onSource) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const ingest = useCallback(
+    async (file) => {
+      if (!file) return;
+      setBusy(true);
+      setError("");
+      try {
+        onSource(await readTicketFile(file));
+      } catch (err) {
+        setError(err?.message || String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onSource]
+  );
+
+  return { ingest, error, setError, busy };
+}
+
+/** Drop target — full-size in the Tickets tab when nothing is loaded. */
+export function TicketDrop({ onSource }) {
+  const { ingest, error, setError, busy } = useTicketImport(onSource);
+  const [over, setOver] = useState(false);
+  const inputRef = useRef(null);
+  const open = () => inputRef.current?.click();
+
+  return (
+    <div className="empty">
+      <h2>Missing Piece Tickets</h2>
+      <p className="muted" style={{ fontSize: 13, maxWidth: 560 }}>
+        Drop the <strong>Missing Piece Mark Ticket</strong> report — the same Concrete Vision
+        database as the schedule, listing every piece with no ticket drawing. Once it is
+        loaded, any scheduled piece still waiting on a drawing is flagged on the planning
+        board.
+      </p>
+
+      <div
+        className={`dropzone${over ? " over" : ""}`}
+        onClick={open}
+        onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => { e.preventDefault(); setOver(false); ingest(e.dataTransfer.files[0]); }}
+        role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") open(); }}
+      >
+        <div style={{ color: "var(--accent)", fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", fontSize: 12 }}>
+          {busy ? "Reading…" : "Drop the ticket report here, or click to browse"}
+        </div>
+        <div className="hint" style={{ marginTop: 8 }}>Accepts .xlsx and .xls</div>
+        <input ref={inputRef} type="file" accept={ACCEPT} hidden
+               onChange={(e) => { ingest(e.target.files[0]); e.target.value = ""; }} />
+      </div>
+
+      {error && <ErrorBox message={error} onDismiss={() => setError("")} />}
+
+      <p className="hint" style={{ marginTop: 14 }}>
+        <strong style={{ color: "var(--text-secondary)" }}>Expected shape:</strong>{" "}
+        one sheet, grouped plant then job, with Plant Name / Job Num / Job Name / Piece Mark
+        column headings. Run it over the same dates as the schedule you loaded.
+      </p>
+      <p className="hint">
+        Parsed in your browser and cached in this browser only. Nothing is uploaded anywhere.
+      </p>
+    </div>
+  );
+}
+
+/** Compact strip shown once a ticket report is loaded. */
+export default function TicketBar({ source, coverage, onSource, onClear, persistWarning }) {
+  const { ingest, error, setError, busy } = useTicketImport(onSource);
+  const inputRef = useRef(null);
+
+  return (
+    <>
+      <div className="srclist">
+        <div className="srcrow">
+          <span className="srcplant">Missing tickets</span>
+          <Badge tone={source.rows.length ? "amber" : "blue"} title="Pieces with no ticket drawing">
+            {count(source.rows.length)} piece{source.rows.length === 1 ? "" : "s"}
+          </Badge>
+          <span className="muted">
+            {source.range.min
+              ? `bed dates ${source.range.min} → ${source.range.max}`
+              : "no bed dates"}
+            {" · "}
+            {count(source.jobs.length)} job{source.jobs.length === 1 ? "" : "s"}
+          </span>
+          <span className="muted" title={source.fileName}
+                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {source.fileName}
+          </span>
+          <span style={{ display: "flex", gap: 6 }}>
+            <button className="btn ghost" disabled={busy} onClick={() => inputRef.current?.click()}>
+              {busy ? "Reading…" : "Replace"}
+            </button>
+            <button className="btn ghost" onClick={onClear} title="Remove the ticket report">Remove</button>
+          </span>
+          <input ref={inputRef} type="file" accept={ACCEPT} hidden
+                 onChange={(e) => { ingest(e.target.files[0]); e.target.value = ""; }} />
+        </div>
+      </div>
+
+      {error && <ErrorBox message={error} onDismiss={() => setError("")} />}
+      {persistWarning && <div className="notice amber">{persistWarning}</div>}
+      {coverage && <CoverageNotice coverage={coverage} />}
+
+      {source.warnings.length > 0 && (
+        <details style={{ marginBottom: 12, fontSize: 11 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>
+            {source.warnings.length} import note(s)
+          </summary>
+          <ul style={{ margin: "6px 0 0 18px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
+            {source.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
+/**
+ * Says how far the ticket report actually speaks to the loaded schedule.
+ *
+ * This is the notice the module exists to show. The two reports are pulled
+ * independently over independent ranges, and when they don't overlap the board
+ * flags nothing — which reads as "everything is drawn" and means the opposite.
+ * Silence here would be the most misleading state in the app.
+ */
+export function CoverageNotice({ coverage: c }) {
+  if (!c.loaded) return null;
+
+  // Rows, not endpoints. A single piece with a years-old bed date is enough to
+  // make the two date ranges "overlap" while every other row sits in the next
+  // month, which is exactly what the real reports do.
+  if (!c.ticketsInWindow) {
+    return (
+      <div className="notice red">
+        <strong>These two reports barely cover the same dates.</strong> The schedule runs{" "}
+        {c.prodRange.min || "—"} → {c.prodRange.max || "—"}, and none of the{" "}
+        {count(c.tickets)} pieces in the ticket report have a bed date inside it
+        {c.tickRange.min && <> (the report runs {c.tickRange.min} → {c.tickRange.max})</>}.
+        The board still flags {count(c.flaggedPieces)} piece
+        {c.flaggedPieces === 1 ? "" : "s"} — the join is on job number and piece mark, so a
+        rescheduled piece is still caught — but <strong>do not read an unflagged board as
+        "every piece is drawn"</strong>. Re-run the ticket report over the schedule's dates.
+      </div>
+    );
+  }
+
+  const partial =
+    c.ticketsInWindow < c.tickets ||
+    c.prodRange.min < c.overlap.min ||
+    c.prodRange.max > c.overlap.max;
+
+  return (
+    <div className={c.jobsNotCovered.length || partial ? "notice amber" : "notice"}>
+      {count(c.flaggedPieces)} scheduled piece{c.flaggedPieces === 1 ? "" : "s"} on the board
+      {" "}have no ticket, out of {count(c.tickets)} in the report.
+      {partial && (
+        <>
+          {" "}Only {count(c.ticketsInWindow)} of them have a bed date inside the schedule's
+          window ({c.prodRange.min} → {c.prodRange.max}); outside it the board can't tell a
+          drawn piece from an unreported one.
+        </>
+      )}
+      {c.jobsNotCovered.length > 0 && (
+        <>
+          {" "}{c.jobsNotCovered.length} scheduled job
+          {c.jobsNotCovered.length === 1 ? " is" : "s are"} absent from the ticket report
+          ({c.jobsNotCovered.slice(0, 8).join(", ")}
+          {c.jobsNotCovered.length > 8 ? "…" : ""}) — either fully drawn, or outside the range
+          it was run over.
+        </>
+      )}
+    </div>
+  );
+}

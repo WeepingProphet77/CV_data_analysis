@@ -39,7 +39,9 @@ const Section = ({ title, children }) => (
   </>
 );
 
-export default function PieceDetail({ piece, siblings = [], related = [], onClose, onSelect }) {
+export default function PieceDetail({
+  piece, siblings = [], related = [], ticket, ticketsLoaded = false, onClose, onSelect,
+}) {
   const ref = useRef(null);
   const [showEmpty, setShowEmpty] = useState(true);
 
@@ -92,6 +94,7 @@ export default function PieceDetail({ piece, siblings = [], related = [], onClos
           <Badge>{piece.bed}</Badge>
           {piece.pos ? <Badge>Pos {piece.pos}</Badge> : null}
           {piece.isPour ? null : <Badge tone="amber">No pieces</Badge>}
+          {ticket && <Badge tone="red">No piece ticket</Badge>}
         </div>
 
         <div className="cards" style={{ gridTemplateColumns: "repeat(2, 1fr)", marginBottom: 4 }}>
@@ -105,6 +108,32 @@ export default function PieceDetail({ piece, siblings = [], related = [], onClos
           <input type="checkbox" checked={showEmpty} onChange={(e) => setShowEmpty(e.target.checked)} />
           Show fields that are empty for this piece
         </label>
+
+        {/* The one field on this drawer that does not come from the schedule
+            export. It is stated as a separate section, and the section says
+            which report it came from, so it can never read as a column
+            Concrete Vision's schedule carries. */}
+        {ticketsLoaded && piece.isPour && (
+          ticket ? (
+            <Section title="Missing Piece Mark Ticket report">
+              <Row label="Ticket" value="MISSING — this piece has no ticket drawing" />
+              <Row label="Drawn By" value={ticket.drawnBy || ""} />
+              <Row label="Drafting group" value={ticket.group} />
+              <Row label="Bed date (ticket report)" value={ticket.date}
+                   raw={ticket.date && ticket.date !== piece.date
+                     ? `the schedule says ${piece.date} — the two reports were pulled at different times`
+                     : undefined} />
+              <Row label="Length × Width × Depth"
+                   value={[ticket.length, ticket.width, ticket.depth].filter(Boolean).join("  ×  ")} />
+              <Row label="Weight" value={ticket.weight ? `${count(Math.round(ticket.weight))} lb` : ""} />
+              <Row label="Plant (ticket report)" value={ticket.plant} />
+            </Section>
+          ) : (
+            <Section title="Missing Piece Mark Ticket report">
+              <Row label="Ticket" value="Not listed as missing" />
+            </Section>
+          )
+        )}
 
         {section("Schedule", [
           ["Plant", piece.plant],

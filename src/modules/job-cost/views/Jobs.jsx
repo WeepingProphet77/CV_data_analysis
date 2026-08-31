@@ -5,7 +5,7 @@
 import React, { useMemo } from "react";
 import { SortableTh, useSort, compareBy, Badge, MiniBar } from "../../../components/ui.jsx";
 import { money, ratio, perSf } from "../../../core/format.js";
-import { StarButton } from "./MyProjects.jsx";
+import { StarButton } from "../../../components/MyProjects.jsx";
 
 export default function Jobs({ jobs, onOpenJob, mine }) {
   const [sort, onSort] = useSort("netContract");

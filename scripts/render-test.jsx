@@ -30,6 +30,11 @@ import ProdBeds from "../src/modules/production/views/Beds.jsx";
 import ProdJobs from "../src/modules/production/views/Jobs.jsx";
 import ProdPieces from "../src/modules/production/views/Pieces.jsx";
 import DayDetail from "../src/modules/production/views/DayDetail.jsx";
+import ProdTickets from "../src/modules/production/views/Tickets.jsx";
+import TicketBar, { TicketDrop, CoverageNotice } from "../src/modules/production/views/TicketBar.jsx";
+import { buildTicketSource } from "../src/modules/production/ticketParse.js";
+import { ticketIndex, ticketCoverage } from "../src/modules/production/tickets.js";
+import { ticketSheet } from "./production-ticket-sample.mjs";
 import JobCostModule from "../src/modules/job-cost/index.jsx";
 import JcPortfolio from "../src/modules/job-cost/views/Portfolio.jsx";
 import JcJobs from "../src/modules/job-cost/views/Jobs.jsx";
@@ -38,7 +43,7 @@ import JcCostCodes from "../src/modules/job-cost/views/CostCodes.jsx";
 import JcProductionLink from "../src/modules/job-cost/views/ProductionLink.jsx";
 import JcEngineering from "../src/modules/job-cost/views/Engineering.jsx";
 import JcSourceLibrary, { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
-import { StarButton, ScopeToggle, NoProjectsYet } from "../src/modules/job-cost/views/MyProjects.jsx";
+import { StarButton, ScopeToggle, NoProjectsYet } from "../src/components/MyProjects.jsx";
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { categoryOf } from "../src/modules/job-cost/categories.js";
 import { engineeringRollup, actIsHours } from "../src/modules/job-cost/engineering.js";
@@ -73,6 +78,37 @@ const prodRows = prodCsv.records.map((rec) => {
 
 const prodPlants = ["All", ...distinct(prodRows, (r) => r.plant)];
 const prodDay = prodRows[0].date;
+const prodScheduledJobNos = new Set(prodRows.map((r) => r.jobNo).filter(Boolean));
+
+/*
+ * A missing-ticket report built over the *production sample's own* pieces, so
+ * the board actually flags something and the marker is exercised rather than
+ * merely imported. Real reports may never be committed (CLAUDE.md §1), so this
+ * is generated in memory like the job cost workbooks.
+ */
+const prodFlagged = prodRows.filter((r) => r.isPour && r.jobNo && r.mark).slice(0, 12);
+const ticketSource = buildTicketSource(
+  ticketSheet([{
+    plant: prodFlagged[0].plant,
+    jobs: [...new Map(prodFlagged.map((r) => [r.jobNo, r])).keys()].map((jobNo) => ({
+      jobNo,
+      jobName: prodFlagged.find((r) => r.jobNo === jobNo).jobTitle,
+      group: "Grp - A",
+      // Half the rows are left unassigned so the "no drafter" bucket renders.
+      pieces: prodFlagged.filter((r) => r.jobNo === jobNo)
+        .map((r, i) => [r.mark, i % 2 ? "adrafter" : "", 46235 + i, Math.round(r.sf) || 1]),
+    })),
+  }]),
+  { fileName: "tickets.sample.xlsx" }
+);
+const prodTicketIdx = ticketIndex(ticketSource.rows);
+const prodCoverage = ticketCoverage(prodRows, ticketSource.rows);
+// A report whose dates miss the schedule entirely — the state the coverage
+// notice exists to shout about.
+const prodCoverageMiss = ticketCoverage(
+  prodRows,
+  ticketSource.rows.map((t) => ({ ...t, date: "2029-01-05" }))
+);
 
 /*
  * Job cost fixtures. The sample workbooks are generated rather than read: a
@@ -117,6 +153,13 @@ const jcMineEmpty = {
   ready: true, members: new Set(), memberList: [], count: 0, scope: "all", active: false,
   isMember: () => false, toggle: noop, setScope: noop, clearMembers: noop,
 };
+// The same selection shape, over production job numbers — My Projects is now
+// app-wide, so production mounts the very same controls.
+const prodMine = {
+  ready: true, members: new Set([prodFlagged[0].jobNo]), memberList: [prodFlagged[0].jobNo],
+  count: 1, scope: "mine", active: true,
+  isMember: (n) => n === prodFlagged[0].jobNo, toggle: noop, setScope: noop, clearMembers: noop,
+};
 
 
 const cases = [
@@ -132,15 +175,29 @@ const cases = [
   ["ProjectDetail", <ProjectDetail job={job} rows={rows} onBack={noop} onOpenPerson={noop} />],
   ["Production module", <ProductionModule />, { allowEmpty: true }],
   ["Prod / Board", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
+  ["Prod / Board + tickets", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} />],
+  ["Prod / Board + empty ticket index", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={new Map()} />],
+  ["Prod / Board + tickets, none matching", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={ticketIndex([{ jobNo: "00000", mark: "NOPE", key: "00000|NOPE" }])} />],
   ["Prod / Board (1 plant)", <PlanningBoard rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
   ["Prod / Board no rows", <PlanningBoard rows={[]} plant="All" plants={["All"]} onPlant={noop} />],
   ["Prod / PieceDetail", <PieceDetail piece={prodRows.find((r) => r.isPour)} siblings={prodRows.slice(0, 4)} onClose={noop} onSelect={noop} />],
   ["Prod / PieceDetail bed activity", <PieceDetail piece={prodRows.find((r) => !r.isPour)} siblings={[]} onClose={noop} onSelect={noop} />],
+  ["Prod / PieceDetail missing ticket", <PieceDetail piece={prodFlagged[0]} siblings={[]} ticket={prodTicketIdx.get(ticketSource.rows[0].key)} ticketsLoaded onClose={noop} onSelect={noop} />],
+  ["Prod / PieceDetail ticket present", <PieceDetail piece={prodRows.find((r) => r.isPour)} siblings={[]} ticketsLoaded onClose={noop} onSelect={noop} />],
   ["Prod / Schedule", <ProdSchedule rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
   ["Prod / Schedule (1 plant)", <ProdSchedule rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
   ["Prod / Charts", <ProdOverview rows={prodRows} onOpenJob={noop} />],
   ["Prod / Beds", <ProdBeds rows={prodRows} search="" />],
   ["Prod / Jobs", <ProdJobs rows={prodRows} search="" onOpenJob={noop} />],
+  ["Prod / Jobs + stars", <ProdJobs rows={prodRows} search="" onOpenJob={noop} mine={prodMine} />],
+  ["Prod / Tickets", <ProdTickets ticketRows={ticketSource.rows} coverage={prodCoverage} scheduledJobNos={prodScheduledJobNos} mine={prodMine} today="2026-08-10" onOpenJob={noop} />],
+  ["Prod / Tickets no rows", <ProdTickets ticketRows={[]} coverage={ticketCoverage(prodRows, [])} scheduledJobNos={prodScheduledJobNos} today="2026-08-10" onOpenJob={noop} />],
+  ["Prod / Tickets one row", <ProdTickets ticketRows={ticketSource.rows.slice(0, 1)} coverage={prodCoverage} scheduledJobNos={prodScheduledJobNos} mine={prodMine} today="2026-08-10" onOpenJob={noop} />],
+  ["Prod / Tickets no schedule loaded", <ProdTickets ticketRows={ticketSource.rows} coverage={ticketCoverage([], ticketSource.rows)} scheduledJobNos={new Set()} today="2026-08-10" onOpenJob={noop} />],
+  ["Prod / TicketBar", <TicketBar source={ticketSource} coverage={prodCoverage} onSource={noop} onClear={noop} />],
+  ["Prod / TicketDrop", <TicketDrop onSource={noop} />],
+  ["Prod / CoverageNotice (windows miss)", <CoverageNotice coverage={prodCoverageMiss} />],
+  ["Prod / CoverageNotice (none loaded)", <CoverageNotice coverage={ticketCoverage(prodRows, [])} />, { allowEmpty: true }],
   ["Prod / Pieces", <ProdPieces rows={prodRows} search="" />],
   ["Prod / DayDetail", <DayDetail date={prodDay} rows={prodRows.filter((r) => r.date === prodDay)} onClose={noop} />],
   ["Prod / Schedule no rows", <ProdSchedule rows={[]} plant="All" plants={["All"]} onPlant={noop} />],
@@ -235,6 +292,44 @@ if (cards < 100 || wkCols === 0) {
   console.log(`FAIL   board rendered cards + week totals (cards=${cards}, wk cells=${wkCols})`);
 } else {
   console.log(`  ok   board rendered its grid          ${cards} piece cards, ${wkCols} week-total cells`);
+}
+
+// The missing-ticket marker must actually reach the grid: a flagged card gets
+// the .noticket class AND the words, because a color alone is not identity
+// (CLAUDE.md §5) and the board is read by people who need it to be obvious.
+const flaggedHtml = renderToString(
+  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} />
+);
+const flaggedCards = (flaggedHtml.match(/class="pcard noticket"/g) || []).length;
+const flagChips = (flaggedHtml.match(/class="tflag"/g) || []).length;
+const plainCards = (flaggedHtml.match(/class="pcard"/g) || []).length;
+if (flaggedCards === 0 || flagChips < flaggedCards || plainCards === 0) {
+  failures++;
+  console.log(`FAIL   board flagged missing tickets (flagged=${flaggedCards}, chips=${flagChips}, plain=${plainCards})`);
+} else {
+  console.log(`  ok   board flagged missing tickets  ${flaggedCards} flagged, ${plainCards} not, ${flagChips} chips`);
+}
+
+// ...and an unflagged board must be genuinely unflagged, so the marker can't be
+// something that renders on every card regardless.
+const unflagged = renderToString(
+  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />
+);
+if (/noticket|tflag/.test(unflagged)) {
+  failures++;
+  console.log("FAIL   board without a ticket report flags nothing");
+} else {
+  console.log("  ok   board without tickets flags none");
+}
+
+// The coverage notice is the one thing that must never be silent when the two
+// reports don't line up — a quiet board would read as "everything is drawn".
+const missHtml = renderToString(<CoverageNotice coverage={prodCoverageMiss} />);
+if (!/notice red/.test(missHtml) || !/every piece is drawn/.test(missHtml)) {
+  failures++;
+  console.log(`FAIL   coverage notice warns on a window miss (${missHtml.slice(0, 90)})`);
+} else {
+  console.log("  ok   coverage notice warns loudly   on a date-window miss");
 }
 
 // The job cost grid must reproduce the report's sections and subtotals, and

@@ -2,10 +2,18 @@
  * "My Projects" — a starred subset of jobs, and whether the dashboard is
  * currently scoped to it.
  *
- * Membership is keyed on the **job number**, not the plant-scoped job key. A
- * job number is the project's identity in both systems — it is what the
- * production join matches on — so a star survives a plant's report being
- * re-imported, removed, or the job being costed under a different plant.
+ * **App-wide, not per module.** It lives in core/ because the same handful of
+ * projects is what an engineering manager wants to see in job cost, in the
+ * production schedule and in the missing-ticket report — starring a job in one
+ * place and having to star it again in the next is the thing this avoids. Any
+ * module can call useMyProjects(); they all read and write the same record, so
+ * a star set on the Jobs table is already applied when Production is opened.
+ *
+ * Membership is keyed on the **job number**, not a plant-scoped key. A job
+ * number is the project's identity in every system here — it is what the
+ * production join matches on, and what the ticket report joins on — so a star
+ * survives a plant's report being re-imported, removed, or the job being costed
+ * under a different plant.
  *
  * The list is deliberately *not* pruned against the loaded data. A job whose
  * plant is not currently imported is still a project you picked; dropping it
@@ -13,9 +21,16 @@
  * reports how many selections aren't currently loaded instead.
  */
 import { useCallback, useMemo } from "react";
-import { usePersistedState, prefKey } from "../../core/persisted.js";
+import { usePersistedState, prefKey } from "./persisted.js";
 
-const KEY = prefKey("job-cost", "my-projects");
+const KEY = prefKey("app", "my-projects");
+
+/**
+ * The selection used to be a job-cost preference. It is read forward from the
+ * old key so nobody loses a curated list when the scope widened; usePersistedState
+ * writes it to the new key and deletes the old one on the first read.
+ */
+const LEGACY_KEYS = [prefKey("job-cost", "my-projects")];
 
 export const SCOPE_ALL = "all";
 export const SCOPE_MINE = "mine";
@@ -46,7 +61,7 @@ export function toggleMember(members, jobNo) {
 const EMPTY = { members: [], scope: SCOPE_ALL };
 
 export function useMyProjects() {
-  const [state, setState, ready] = usePersistedState(KEY, EMPTY, isValidSelection);
+  const [state, setState, ready] = usePersistedState(KEY, EMPTY, isValidSelection, LEGACY_KEYS);
 
   const members = useMemo(() => new Set(state.members), [state.members]);
 

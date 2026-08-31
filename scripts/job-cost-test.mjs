@@ -16,7 +16,7 @@ import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/c
 import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
 import { isSquareFeetRow, isPieceRow, squareFeetFor, perSf, ratesFor, jobSquareFeet } from "../src/modules/job-cost/squarefeet.js";
 import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
-import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/modules/job-cost/useMyProjects.js";
+import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/core/myProjects.js";
 import {
   disciplineOf, isInHouse, inRateBand, estIsHours, actIsHours, isLumpSum,
   blendedRate, engineeringRollup, hoursAgreement, varianceToBudget, forecastShift, RATE_BAND,

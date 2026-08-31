@@ -15,7 +15,7 @@ import { useDataset } from "../../core/store.js";
 import { Tabs } from "../../components/ui.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
 import { useJobCostData, useJobCostFilters } from "./useJobCost.js";
-import { useMyProjects, SCOPE_ALL, SCOPE_MINE } from "./useMyProjects.js";
+import { useMyProjects, SCOPE_ALL, SCOPE_MINE } from "../../core/myProjects.js";
 import { categoryOptions } from "./categories.js";
 import SourceLibrary, { SourceDrop } from "./views/SourceLibrary.jsx";
 import Portfolio from "./views/Portfolio.jsx";
@@ -24,7 +24,7 @@ import JobDetail from "./views/JobDetail.jsx";
 import CostCodes from "./views/CostCodes.jsx";
 import ProductionLink from "./views/ProductionLink.jsx";
 import Engineering from "./views/Engineering.jsx";
-import { ScopeToggle, NoProjectsYet } from "./views/MyProjects.jsx";
+import { ScopeToggle, NoProjectsYet } from "../../components/MyProjects.jsx";
 
 export default function JobCostModule() {
   const lib = useLibrary("job-cost");

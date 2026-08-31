@@ -10,6 +10,13 @@
  * status (pour sheets attached, steel shop complete, bed verified...). The
  * Scheduled Production Report carries none of those fields, so cards are
  * colored by a dimension the export does have — job, phase or product code.
+ *
+ * The one shop-status-like signal the board *can* show is the missing piece
+ * ticket, and it comes from a second export (../ticketParse.js). It is drawn as
+ * a red ring and a NO TICKET chip rather than a card color, because it is an
+ * alert and not a category: it has to stay legible whatever the cards are
+ * currently tinted by, and it must never consume one of the eight validated
+ * categorical slots (CLAUDE.md §5).
  */
 import React, { useMemo, useState } from "react";
 import { Panel } from "../../../components/ui.jsx";
@@ -17,6 +24,7 @@ import { groupBy, sumBy, rollup } from "../../../core/aggregate.js";
 import { fmt, count, isoToDate } from "../../../core/format.js";
 import { daySpan, buildColumns } from "../board.js";
 import { colorMapFor, OTHER_COLOR, MAX_SERIES } from "../../../core/palette.js";
+import { ticketFor } from "../tickets.js";
 import PieceDetail from "./PieceDetail.jsx";
 
 /** Cards can be tinted by any low-cardinality dimension the export carries. */
@@ -29,10 +37,20 @@ const COLOR_BY = [
 
 const MAX_DAYS = 70;   // a wider window stops being readable as a grid
 
-export default function PlanningBoard({ rows, plant, plants, onPlant }) {
+export default function PlanningBoard({ rows, plant, plants, onPlant, tickets }) {
   const [colorById, setColorById] = useState("job");
   const [onlyWithData, setOnlyWithData] = useState(true);
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [selected, setSelected] = useState(null);
+
+  /**
+   * The missing-ticket lookup, or an empty Map when no ticket report is loaded.
+   * An empty Map flags nothing, so every path below works unchanged whether or
+   * not the second export is present.
+   */
+  const ticketIdx = tickets ?? new Map();
+  const hasTickets = ticketIdx.size > 0;
+  const ticketOf = (r) => ticketFor(ticketIdx, r);
 
   const colorBy = COLOR_BY.find((c) => c.id === colorById) ?? COLOR_BY[0];
 
@@ -59,6 +77,20 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
     return map;
   }, [rows]);
 
+  /**
+   * Scheduled rows whose piece has no ticket. Computed once per render pass
+   * rather than per cell — the board draws thousands of cells and calling the
+   * lookup inside the grid would be the only quadratic thing on the page.
+   */
+  const missing = useMemo(
+    () => (hasTickets ? rows.filter((r) => r.isPour && ticketOf(r)) : []),
+    // ticketOf closes over ticketIdx; hasTickets tracks whether it has content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, ticketIdx, hasTickets]
+  );
+  const missingRows = useMemo(() => new Set(missing), [missing]);
+  const missingPieces = useMemo(() => sumBy(missing, (r) => r.qty), [missing]);
+
   /** Bed rows, grouped by plant so "All plants" stays legible. */
   const bedRows = useMemo(() => {
     const beds = [...groupBy(rows, (r) => r.bedKey)].map(([bedKey, bucket]) => ({
@@ -68,13 +100,21 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
       pieces: sumBy(bucket, (r) => r.qty),
       inWindow: bucket.some((r) => days.includes(r.date)),
     }));
-    const kept = onlyWithData ? beds.filter((b) => b.pieces > 0 || b.inWindow) : beds;
+    let kept = onlyWithData ? beds.filter((b) => b.pieces > 0 || b.inWindow) : beds;
+    // With "only missing" on, a bed holding nothing flagged is an empty row —
+    // and with a handful of flagged pieces across 30 beds that is the whole
+    // grid. Drop those rows; the ones that remain keep their real dates and
+    // week columns, so a flagged piece still reads in context.
+    if (onlyMissing) {
+      const flaggedBeds = new Set([...missingRows].map((r) => r.bedKey));
+      kept = kept.filter((b) => flaggedBeds.has(b.bedKey));
+    }
     return kept.sort(
       (a, b) =>
         a.plant.localeCompare(b.plant) ||
         a.bed.localeCompare(b.bed, undefined, { numeric: true, sensitivity: "base" })
     );
-  }, [rows, days, onlyWithData]);
+  }, [rows, days, onlyWithData, onlyMissing, missingRows]);
 
   /** One color per key, ranked by volume so the busiest jobs get slot 1..8. */
   const colors = useMemo(() => {
@@ -114,6 +154,19 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
     return <p className="muted" style={{ padding: 20 }}>Nothing scheduled in the current filters.</p>;
   }
 
+  if (onlyMissing && !bedRows.length) {
+    return (
+      <p className="muted" style={{ padding: 20 }}>
+        No scheduled piece in the current filters is missing its ticket.{" "}
+        <button className="btn ghost" onClick={() => setOnlyMissing(false)}>Show every piece</button>
+        <span style={{ display: "block", marginTop: 8, fontSize: 11 }}>
+          Check the Tickets tab first — if the ticket report doesn't cover these dates,
+          this means the report is silent about them, not that they are drawn.
+        </span>
+      </p>
+    );
+  }
+
   const multiPlant = new Set(bedRows.map((b) => b.plant)).size > 1;
   const siblings = selected ? cellIndex.get(`${selected.bedKey}|${selected.date}`) ?? [] : [];
   const related = selected?.mark ? markIndex.get(selected.mark) ?? [] : [];
@@ -144,8 +197,20 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
           Only beds with data
         </label>
 
+        {hasTickets && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--critical)", cursor: "pointer" }}>
+            <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} />
+            Only pieces missing a ticket
+          </label>
+        )}
+
         <span style={{ flex: 1 }} />
         <span className="muted" style={{ fontSize: 11 }}>
+          {hasTickets && (
+            <strong style={{ color: missingPieces ? "var(--critical)" : "var(--text-secondary)" }}>
+              {count(missingPieces)} piece{missingPieces === 1 ? "" : "s"} missing a ticket ·{" "}
+            </strong>
+          )}
           {bedRows.length} beds · {days.length} days · {range.min} → {days[days.length - 1]}
         </span>
       </div>
@@ -236,18 +301,27 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
                       const cell = cellIndex.get(`${b.bedKey}|${col.iso}`);
                       return (
                         <td key={`d${col.iso}`} className={`day${dayTotals.has(col.iso) ? "" : " offday"}`}>
-                          {cell?.map((r, j) =>
-                            r.isPour ? (
+                          {cell?.map((r, j) => {
+                            const noTicket = missingRows.has(r);
+                            // "Only missing" hides the rest of the pieces but
+                            // keeps the bed rows, so a flagged piece stays in
+                            // the bed and week it actually belongs to.
+                            if (onlyMissing && r.isPour && !noTicket) return null;
+                            if (onlyMissing && !r.isPour) return null;
+                            return r.isPour ? (
                               <button
                                 key={`${r.castNo}-${j}`}
-                                className="pcard"
+                                className={`pcard${noTicket ? " noticket" : ""}`}
                                 aria-pressed={selected === r}
                                 style={{ borderLeftColor: colors.get(colorBy.get(r)) ?? (colorBy.id === "none" ? "var(--rule)" : OTHER_COLOR) }}
                                 onClick={() => setSelected(r)}
-                                title={`${r.job} — ${r.mark}`}
+                                title={noTicket
+                                  ? `${r.job} — ${r.mark} — NO PIECE TICKET`
+                                  : `${r.job} — ${r.mark}`}
                               >
                                 <span className="jobno">{r.jobNo}</span>
                                 <span className="mark">{r.mark}</span>
+                                {noTicket && <span className="tflag" aria-label="No piece ticket">NO TICKET</span>}
                                 <div className="meta">
                                   {count(Math.round(r.sf))} SF · {fmt(r.cy)} CY{r.pos ? ` · pos ${r.pos}` : ""}
                                 </div>
@@ -256,8 +330,8 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
                               <div key={`${r.castNo}-${j}`} className="bedwork" title={r.note}>
                                 {r.note || "Bed activity"}
                               </div>
-                            )
-                          )}
+                            );
+                          })}
                         </td>
                       );
                     })}
@@ -274,10 +348,23 @@ export default function PlanningBoard({ rows, plant, plants, onPlant }) {
         bed verified, and so on. <strong>The Scheduled Production Report export carries none of those
         fields</strong>, so cards are tinted by {colorBy.label.toLowerCase()} instead. Grey columns are
         days with nothing scheduled. Dashed amber blocks are bed activity with no pieces.
+        {hasTickets ? (
+          <>
+            {" "}A red <span className="tflag" style={{ marginLeft: 0 }}>NO TICKET</span> card is a piece
+            listed in the Missing Piece Mark Ticket report — matched on job number and piece mark, not
+            on bed date, so a rescheduled piece stays flagged.
+          </>
+        ) : (
+          <>
+            {" "}Load the Missing Piece Mark Ticket report on the <strong>Tickets</strong> tab to have
+            pieces still waiting on a drawing flagged here.
+          </>
+        )}
       </p>
 
       {selected && (
         <PieceDetail piece={selected} siblings={siblings} related={related}
+                     ticket={ticketOf(selected)} ticketsLoaded={hasTickets}
                      onClose={() => setSelected(null)} onSelect={setSelected} />
       )}
     </div>

@@ -15,6 +15,7 @@ import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { libraryKey } from "../src/core/library.js";
 import { prefKey } from "../src/core/persisted.js";
+import { isValidSelection, toggleMember } from "../src/core/myProjects.js";
 import { readRecord, writeRecord } from "../src/core/store.js";
 import { buildSource } from "../src/modules/job-cost/parse.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
@@ -120,10 +121,15 @@ ok("a dataset record is not mistaken for a library", !isLibrary({ rows: [] }));
  * clearing imported files must not forget which projects were starred.
  */
 console.log("\nMy Projects preference");
-const prefsKey = prefKey("job-cost", "my-projects");
-const validPref = (v) =>
-  v != null && Array.isArray(v.members) && v.members.every((m) => typeof m === "string") &&
-  (v.scope === "all" || v.scope === "mine");
+// App-wide, not per module: the same starred list scopes job cost, production
+// and the missing-ticket report, so it is keyed on "app" rather than a module.
+const prefsKey = prefKey("app", "my-projects");
+const legacyPrefsKey = prefKey("job-cost", "my-projects");
+// The app's own guard, not a copy of it — a validator that drifts from the one
+// the hook uses would let a rejected record through in the browser.
+const validPref = isValidSelection;
+ok("the selection is keyed app-wide, not per module",
+   prefsKey === "cv.analysis.app.my-projects.v1", prefsKey);
 
 await writeRecord(prefsKey, { value: { members: ["50101", "50110"], scope: "mine" } });
 const pref = await readRecord(prefsKey, (v) => v != null && validPref(v.value));
@@ -143,6 +149,35 @@ ok("a malformed member list is rejected",
 await writeRecord(prefsKey, { value: { members: [], scope: "sideways" } });
 ok("an unknown scope is rejected",
    (await readRecord(prefsKey, (v) => v != null && validPref(v.value))) === null);
+
+/*
+ * The selection moved from a job-cost key to an app-wide one when production
+ * and the ticket report started reading it. A hand-curated list must survive
+ * that move — re-starring everything because the scope widened would be the
+ * most annoying possible upgrade.
+ */
+console.log("\nMy Projects migration from the job-cost key");
+await idbDel(prefsKey);
+await writeRecord(legacyPrefsKey, { value: { members: ["43134", "45154"], scope: "mine" } });
+
+// Mirrors what usePersistedState does on first read: adopt the old key, write
+// it forward, then drop it.
+const guard = (v) => v != null && validPref(v.value);
+let adopted = await readRecord(prefsKey, guard);
+ok("nothing is stored under the new key yet", adopted === null);
+adopted = await readRecord(legacyPrefsKey, guard);
+if (adopted) { await writeRecord(prefsKey, adopted); await idbDel(legacyPrefsKey); }
+
+const migrated = await readRecord(prefsKey, guard);
+ok("the curated list survives the move",
+   migrated?.value.members.join() === "43134,45154" && migrated.value.scope === "mine");
+ok("the old key is gone, so the migration runs once",
+   (await idbGet(legacyPrefsKey)) === undefined);
+
+// Membership is job numbers, and stays sorted so two equal lists compare equal.
+ok("toggling adds and removes one job number",
+   toggleMember(["43134"], "45154").join() === "43134,45154" &&
+   toggleMember(["43134", "45154"], "43134").join() === "45154");
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll persistence checks passed.\n`);
 process.exit(failures ? 1 : 0);

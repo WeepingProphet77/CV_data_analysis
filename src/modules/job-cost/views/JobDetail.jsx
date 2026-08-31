@@ -12,7 +12,7 @@ import { BackLink, Panel, Badge, StatCard, MiniBar } from "../../../components/u
 import { money, ratio, fmt, count, perSf, sqft } from "../../../core/format.js";
 import { JOB_FIELDS, COST_FIELDS } from "../schema.js";
 import { SECTIONS, SECTION_LABELS } from "../categories.js";
-import { StarButton } from "./MyProjects.jsx";
+import { StarButton } from "../../../components/MyProjects.jsx";
 
 const value = (job, f) => {
   const v = job[f.key];

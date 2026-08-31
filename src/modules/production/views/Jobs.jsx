@@ -1,10 +1,11 @@
 /** Per-job rollup across the filtered window. */
 import React, { useMemo } from "react";
 import { MiniBar, SortableTh, useSort, compareBy, Badge } from "../../../components/ui.jsx";
+import { StarButton } from "../../../components/MyProjects.jsx";
 import { fmt, count } from "../../../core/format.js";
 import { groupBy, sumBy, distinct } from "../../../core/aggregate.js";
 
-export default function Jobs({ rows, search, onOpenJob }) {
+export default function Jobs({ rows, search, onOpenJob, mine }) {
   const [sort, onSort] = useSort("pieces");
 
   const jobs = useMemo(() => {
@@ -38,6 +39,7 @@ export default function Jobs({ rows, search, onOpenJob }) {
       <table>
         <thead>
           <tr>
+            {mine && <th style={{ width: 34 }} title="Add to My Projects">★</th>}
             <SortableTh column="jobNo" label="Job #" sort={sort} onSort={onSort} />
             <SortableTh column="jobTitle" label="Job" sort={sort} onSort={onSort} />
             <SortableTh column="pieces" label="Pieces" sort={sort} onSort={onSort} />
@@ -53,6 +55,11 @@ export default function Jobs({ rows, search, onOpenJob }) {
         <tbody>
           {jobs.map((j) => (
             <tr key={j.job} className="clickable" onClick={() => onOpenJob?.(j.job)}>
+              {mine && (
+                <td>{j.jobNo
+                  ? <StarButton jobNo={j.jobNo} on={mine.isMember(j.jobNo)} onToggle={mine.toggle} />
+                  : null}</td>
+              )}
               <td className="muted nowrap">{j.jobNo || "—"}</td>
               <td className="link" style={{ maxWidth: 300 }} title={j.job}>{j.jobTitle}</td>
               <td className="num nowrap">{count(j.pieces)}<MiniBar value={j.pieces} max={maxPieces} color="var(--series-3)" /></td>
@@ -66,7 +73,7 @@ export default function Jobs({ rows, search, onOpenJob }) {
                   {j.plants.length > 2 && <Badge tone="amber">+{j.plants.length - 2}</Badge>}</td>
             </tr>
           ))}
-          {!jobs.length && <tr><td colSpan={10} className="muted" style={{ padding: 18 }}>No jobs match the current filters.</td></tr>}
+          {!jobs.length && <tr><td colSpan={mine ? 11 : 10} className="muted" style={{ padding: 18 }}>No jobs match the current filters.</td></tr>}
         </tbody>
       </table>
     </div>
