@@ -603,7 +603,15 @@ npm run deploy    # tests, builds, force-pushes dist/ to gh-pages
 ```
 
 `scripts/deploy-pages.sh` refuses to run on a dirty working tree, runs `npm test`
-first, and publishes into a throwaway worktree. **The `gh-pages` branch holds
+first, and publishes into a throwaway worktree.
+
+**If the deploy appears to stall, it is the push waiting on a credential
+prompt** with no terminal to show it — seen 2026-08-31, hung for ten minutes and
+had to be killed. Run it with `GIT_TERMINAL_PROMPT=0` so it fails fast and says
+so instead of hanging. Also note `timeout` is **not** on macOS (it is `gtimeout`,
+from coreutils); wrapping the deploy in it silently runs nothing and still exits
+0, which looks exactly like a successful deploy until you check the bundle hash.
+Which is the other reason to check the bundle hash. **The `gh-pages` branch holds
 build output only — never edit it, and never merge it into `main`.** It is
 force-pushed on every deploy.
 
