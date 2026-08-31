@@ -1,10 +1,14 @@
 # Interface proposal — making CV Data Analysis read as one application
 
-**Status:** **implemented** 2026-08-31 (phases 1–3). Phase 4 is still open — it
-needs a real Employee Time export profiled and the plan-vs-actual columns
-confirmed, neither of which can be done from the code. CLAUDE.md §15 is the
-maintained description of what was built; this document is kept for the
-diagnosis and the accounting in §8.
+**Status:** **implemented** 2026-08-31 — phases 1–3, and phase 4's Employee Time
+half once the real export arrived (it carries the job number; the hours join is
+real and Time joined the app-wide scope). What remains of phase 4 is confirming
+the plan-vs-actual export's columns, which needs a file nobody has yet.
+
+CLAUDE.md §12 and §15 are the maintained description of what was built; this
+document is kept for the diagnosis and for the accounting in §8. Where a claim
+here was overtaken by the profile, it is marked in place rather than rewritten —
+the reasoning is the point of keeping it.
 **Written:** 2026-08-31, against commit `e137fbe`.
 **Scope:** the interface — navigation, entry point, vocabulary, routing, and where
 each existing view lives. **No analysis, view or control is removed.** §8 is a
@@ -300,6 +304,9 @@ Ashland City · cost as of 2026-08-26 · scheduled Aug 3 – Aug 28
   §10), so it cannot be joined on job number yet. The section shows a
   best-effort name match clearly labelled as such, or states that the join is
   unavailable. It must not silently imply a link that does not exist.
+  > **Superseded 2026-08-31.** The export was profiled and it *does* carry the
+  > job number, on 100.0% of rows. The hours join is real, the caveat is gone,
+  > and the block breaks hours down by task and by person. See CLAUDE.md §12.
 - **This replaces the lossy hash jump** at `job-cost/index.jsx:63`. Every job
   number in every table in the app links here.
 
@@ -489,10 +496,13 @@ would be annoying to reverse.
 
 ### Phase 4 — the honest gaps
 
-- Profile a real Employee Time export, so its job field can join on job number
-  (CLAUDE.md §10, §12). Until then, Time genuinely cannot participate in My
-  Projects and the Job page's Hours section stays a labelled best-effort.
-- Confirm the Schedule export's columns and mount Plan vs Actual.
+- ~~Profile a real Employee Time export, so its job field can join on job
+  number~~ — **done 2026-08-31.** The schema was right, the export carries the
+  job number, the join is real, and Time now takes part in My Projects. It also
+  turned up a trap worth recording: `Location` is the person's *office*, not the
+  job's plant, so it must never be wired to `plants.js` (CLAUDE.md §12).
+- Confirm the plan-vs-actual export's columns and mount it as a Production tab.
+  Still open — nobody has produced that file.
 
 ---
 

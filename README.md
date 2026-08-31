@@ -99,7 +99,7 @@ drawn" only when the ticket report covers the same dates.
 
 One row per job number, filled in from whichever sources know about it — contract
 and margin from the cost reports, pieces and pour days from the schedule, missing
-drawings from the ticket report. A job present in only one source leaves the other
+drawings from the ticket report, booked hours from the timesheets. A job present in only one source leaves the other
 side dashed, never zeroed. Filter by which sources a job appears in to find
 "costed but not scheduled" or "scheduled but not costed".
 
@@ -115,9 +115,9 @@ schedule, drawings and hours, each stating which report it came from and as of
 when. A source that isn't loaded says so; a source that is loaded but says
 nothing about that job says *that* instead. Neither renders zeros.
 
-The hours block is the one honest exception — it matches on the job number
-appearing in the timesheet's free-text job name, and labels itself a guess,
-because that export has never been checked against a real file.
+The hours block breaks the time down by task and by person — the question the
+cost report cannot answer, since it books cost to a code rather than time to a
+person. The two sit side by side and are never added together.
 
 ### Cost
 
@@ -149,10 +149,8 @@ misread.
   as the lines above it.
 
 **My Projects.** Star any job with the ☆ in a job table or on its job page, then
-switch the toggle in the header from *All Projects* to *My Projects* — Projects,
-Production, Drawings and Cost all narrow to just those jobs. (Time does not: its
-job field is free text with no job number in it, so scoping it would hide rows
-rather than narrow them, and the section says so.) The list is
+switch the toggle in the header from *All Projects* to *My Projects* — every
+section narrows to just those jobs. The list is
 saved in your browser and stays exactly as you left it until you add or remove
 something. A starred job whose plant isn't currently loaded stays in the list and
 is reported rather than quietly dropped.
@@ -178,7 +176,11 @@ misspelling. If a required column is genuinely absent, the importer says which
 one and lists the headers it did find.
 
 The employee time export expects: `Effective Date`, `First Name`, `Last Name`, `Job Name`,
-`Hours` (required), plus `Location`, `GL Code`, `Labor Task`, `Deptment` (optional).
+`Hours` (required), plus `Emp Number`, `Location`, `GL Code`, `Labor Task`, `Deptment`
+and `Summary` (optional). Its `Job Name` carries the job number in the same
+`"<number> - <title>"` shape the schedule uses, which is what lets timesheet hours
+join to cost and to the schedule. Note that `Location` is the **person's office**,
+not the plant the job is built at.
 
 The job cost report is the exception: it is a formatted, multi-sheet workbook rather than a
 table, so it accepts `.xlsx`/`.xls` only and is read by its own parser. It expects

@@ -201,27 +201,72 @@ function Summary({ app, job }) {
         title="Hours"
         source="Employee time export"
         asOf={job.hours.range.min ? `${job.hours.range.min} → ${job.hours.range.max}` : ""}
-        note="Matched by job number found in the timesheet's job name — a guess, not a confirmed join."
+        note="Timesheet hours booked to this job, joined on the job number."
         loaded={job.loaded.time}
         present={job.hours.rows.length > 0}
         missingFile="the employee time export"
-        absent={job.loaded.time ? "No timesheet rows name this job number." : ""}
-        action={job.hours.rows.length > 0 && <a className="btn ghost" href={hrefFor("time", "jobs")}>Open Time</a>}
+        absent={job.loaded.time ? "No timesheet hours are booked to this job." : ""}
+        action={
+          job.hours.rows.length > 0 &&
+          <a className="btn ghost" href={hrefFor("time", "job", job.hours.rows[0].job)}>Open in Time</a>
+        }
       >
         {job.hours.rows.length > 0 && (
           <>
             <div className="cards">
               <StatCard label="Hours" value={fmt(job.hours.hours)} />
               <StatCard label="People" value={job.hours.people} small />
+              <StatCard label="Offices" value={job.hours.offices.join(", ") || "—"} small
+                        sub="where the people sit, not the plant" />
             </div>
-            <div className="notice amber">
-              <strong>This match is not verified.</strong> The employee time export has never been
-              profiled against a real file, so its job field is free text with no confirmed job
-              number in it. These rows were matched because{" "}
-              <strong>{job.jobNo}</strong> appears in their job name
-              {job.hours.names.length > 0 && <> ({job.hours.names.slice(0, 3).join("; ")}{job.hours.names.length > 3 ? "…" : ""})</>}
-              . Do not read these hours against the cost figures above.
+
+            {/* What the time went on. The cost report has D&E dollars per code
+                but cannot say who spent the day, or on what. */}
+            <div className="grid-2">
+              <div>
+                <div className="section-label">Hours by task</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Labor Task</th><th className="num">Hours</th><th className="num">Share</th></tr></thead>
+                    <tbody>
+                      {job.hours.byTask.slice(0, 8).map((t) => (
+                        <tr key={t.key}>
+                          <td>{t.key}</td>
+                          <td className="num">{fmt(t.hrs)}</td>
+                          <td className="num">{ratio(t.hrs / job.hours.hours)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <div className="section-label">Hours by person</div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Name</th><th className="num">Hours</th><th className="num">Share</th></tr></thead>
+                    <tbody>
+                      {job.hours.byPerson.slice(0, 8).map((t) => (
+                        <tr key={t.key} className="clickable" onClick={() => go("time", "person", t.key)}>
+                          <td className="link">{t.key}</td>
+                          <td className="num">{fmt(t.hrs)}</td>
+                          <td className="num">{ratio(t.hrs / job.hours.hours)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
+
+            {/* These are hours, not dollars. The cost report books D&E labor in
+                its own 60.x lines, and the two are not the same measure -- one
+                is time booked by people, the other is cost booked to codes. */}
+            <p className="hint">
+              Hours, not dollars, and not the same measure as the cost report's D&amp;E lines —
+              those book cost to a code, these book time to a person. Shown side by side, never
+              added.
+            </p>
           </>
         )}
       </SourceSection>

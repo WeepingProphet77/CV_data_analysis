@@ -24,7 +24,7 @@ const add = (a, b) => (a || 0) + (b || 0);
  * listed and its cost figures added, because they are the same project even
  * when they are separate contracts — the job page breaks them out again.
  */
-export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [] }) {
+export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [], timeRows = [] }) {
   const map = new Map();
 
   const at = (jobNo) => {
@@ -37,6 +37,7 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [] 
         sfJob: 0, hasSf: false,
         pieces: 0, sfScheduled: 0, cy: 0, beds: new Set(), days: new Set(),
         missingTickets: 0, unassigned: 0,
+        timed: false, hours: 0, people: new Set(),
       };
       map.set(jobNo, r);
     }
@@ -81,12 +82,24 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [] 
     if (!t.drawnBy) r.unassigned += 1;
   }
 
+  // Timesheet hours join on the job number like everything else — the export
+  // carries it in "<no> - <title>", profiled 2026-08-31 (§12).
+  for (const t of timeRows) {
+    if (!t.jobNo) continue;
+    const r = at(t.jobNo);
+    r.timed = true;
+    r.title = r.title || t.jobTitle;
+    r.hours += t.hrs || 0;
+    if (t.name) r.people.add(t.name);
+  }
+
   return [...map.values()]
     .map((r) => ({
       ...r,
       plants: [...r.plants].filter(Boolean).sort(),
       beds: r.beds.size,
       days: r.days.size,
+      people: r.people.size,
       // Rates and ratios are null, never zero, when their denominator is
       // unknown — a zero would read as "costs nothing per foot".
       marginPct: r.netContract > 0 ? r.margin / r.netContract : null,
@@ -95,8 +108,10 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [] 
       actualPerSf: r.hasSf && r.sfJob > 0 ? r.actCost / r.sfJob : null,
       forecastPerSf: r.hasSf && r.sfJob > 0 ? r.projCost / r.sfJob : null,
       // Sorting on presence needs a value the generic comparator understands.
-      sources: [r.costed && "cost", r.scheduled && "schedule", r.drawn && "drawings"]
-        .filter(Boolean).join("+"),
+      // Cost per booked hour is only meaningful where both sides exist.
+      costPerHour: r.costed && r.hours > 0 ? r.actCost / r.hours : null,
+      sources: [r.costed && "cost", r.scheduled && "schedule", r.drawn && "drawings",
+                r.timed && "time"].filter(Boolean).join("+"),
     }))
     .sort((a, b) => a.jobNo.localeCompare(b.jobNo, undefined, { numeric: true }));
 }
@@ -110,6 +125,10 @@ export const PRESENCE = [
   { id: "cost-only", label: "Costed, not scheduled", test: (r) => r.costed && !r.scheduled },
   { id: "sched-only", label: "Scheduled, not costed", test: (r) => r.scheduled && !r.costed },
   { id: "missing", label: "Missing drawings", test: (r) => r.missingTickets > 0 },
+  { id: "timed", label: "Has booked hours", test: (r) => r.timed },
+  // Hours booked against a job no cost report covers — either the report isn't
+  // loaded, or the job is not an active one. Worth being able to find.
+  { id: "time-only", label: "Hours, no cost report", test: (r) => r.timed && !r.costed },
 ];
 
 export const applyPresence = (rows, id) => {

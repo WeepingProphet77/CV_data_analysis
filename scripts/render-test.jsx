@@ -250,15 +250,25 @@ const withApp = (el, value = appLoaded) => (
 );
 
 const projRows = projectRows({
-  costJobs: jcJobs, scheduleRows: prodRows, ticketRows: ticketSource.rows,
+  costJobs: jcJobs, scheduleRows: prodRows, ticketRows: ticketSource.rows, timeRows: rows,
 });
-const jobFixture = assembleJob({
-  jobNo: prodFlagged[0].jobNo,
-  costJobs: jcJobs, scheduleRows: prodRows, ticketRows: ticketSource.rows,
-  timeRows: rows, diff: prodDiff,
-  loaded: { cost: true, schedule: true, drawings: true, time: true },
-});
+// A job the timesheet sample actually books hours to, so the Hours block on the
+// job page is exercised rather than merely imported.
+const timedJobNo = rows.map((r) => r.jobNo).find(Boolean) || prodFlagged[0].jobNo;
 const sourceRoute = { section: "time", params: [], tab: "overview", rest: [] };
+
+// My Projects over a job number the timesheet actually books hours to — Time
+// takes part in the app-wide scope now that its export carries job numbers.
+const timeJobNo = rows.map((r) => r.jobNo).find(Boolean) || "00-001";
+const timeMine = {
+  ready: true, members: new Set([timeJobNo]), memberList: [timeJobNo], count: 1,
+  scope: "mine", active: true,
+  isMember: (n) => n === timeJobNo, toggle: noop, setScope: noop, clearMembers: noop,
+};
+const timeMineNone = {
+  ready: true, members: new Set(), memberList: [], count: 0, scope: "mine", active: false,
+  isMember: () => false, toggle: noop, setScope: noop, clearMembers: noop,
+};
 
 const cases = [
   // A module returns null until useDataset resolves, and effects never run
@@ -329,6 +339,8 @@ const cases = [
   ["Time section", withApp(<TimeModule tab="overview" route={sourceRoute} />)],
   ["Time section / people", withApp(<TimeModule tab="people" route={sourceRoute} />)],
   ["Time section / jobs", withApp(<TimeModule tab="jobs" route={sourceRoute} />)],
+  ["Time section, scoped to My Projects", withApp(<TimeModule tab="overview" route={sourceRoute} />, { ...appLoaded, mine: timeMine })],
+  ["Time section, scope with nothing starred", withApp(<TimeModule tab="overview" route={sourceRoute} />, { ...appLoaded, mine: timeMineNone })],
   ["Time section / cumulative", withApp(<TimeModule tab="cumulative" route={sourceRoute} />)],
   ["Time / person route", withApp(<TimeModule tab="people" route={{ ...sourceRoute, rest: ["person", person] }} />)],
   ["Time / job route", withApp(<TimeModule tab="jobs" route={{ ...sourceRoute, rest: ["job", job] }} />)],
@@ -366,6 +378,7 @@ const cases = [
   ["Projects / Cost vs Schedule", withApp(<ProjectsModule tab="vs-schedule" />)],
   ["Projects, nothing loaded", withApp(<ProjectsModule tab="jobs" />, appEmpty)],
   ["Job page", withApp(<JobPage params={[prodFlagged[0].jobNo]} tab="summary" />)],
+  ["Job page with hours", withApp(<JobPage params={[timedJobNo]} tab="summary" />)],
   ["Job page / full cost report", withApp(<JobPage params={[jcJobs[0].jobNo]} tab="cost" />)],
   ["Job page, cost only", withApp(<JobPage params={[jcJobs[0].jobNo]} tab="summary" />)],
   ["Job page, unknown job", withApp(<JobPage params={["00000"]} tab="summary" />)],
@@ -578,14 +591,18 @@ if (!projMineHtml.includes("★") || !projAllHtml.includes("☆")) {
 // job only the schedule knows appear in one list, with the absent side dashed
 // rather than zeroed. That is the merge this section exists to perform.
 {
-  const costed = projRows.filter((r) => r.costed && !r.scheduled).length;
-  const sched = projRows.filter((r) => r.scheduled && !r.costed).length;
-  const both = projRows.filter((r) => r.scheduled && r.costed).length;
-  if (costed + sched + both !== projRows.length || projRows.length <= Math.max(jcJobs.length, 1)) {
+  // Every row must come from at least one source -- a row belonging to none
+  // would mean the merge invented a job.
+  const orphan = projRows.filter((r) => !r.costed && !r.scheduled && !r.drawn && !r.timed).length;
+  const costed = projRows.filter((r) => r.costed).length;
+  const sched = projRows.filter((r) => r.scheduled).length;
+  const timed = projRows.filter((r) => r.timed).length;
+  const only = (k) => projRows.filter((r) => r.sources === k).length;
+  if (orphan > 0 || projRows.length < Math.max(costed, sched, timed) || projRows.length <= jcJobs.length) {
     failures++;
-    console.log(`FAIL   projects merged both sources (cost-only=${costed}, sched-only=${sched}, both=${both}, rows=${projRows.length})`);
+    console.log(`FAIL   projects merged every source (orphans=${orphan}, rows=${projRows.length}, cost=${costed}, sched=${sched}, time=${timed})`);
   } else {
-    console.log(`  ok   projects merged both sources     ${projRows.length} jobs (${costed} cost-only, ${sched} schedule-only, ${both} both)`);
+    console.log(`  ok   projects merged every source     ${projRows.length} jobs (${costed} costed, ${sched} scheduled, ${timed} with hours; ${only("cost")} cost-only, ${only("schedule")} schedule-only, ${only("time")} time-only)`);
   }
   if (!/Not in this source/.test(projAllHtml)) {
     failures++;

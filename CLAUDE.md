@@ -44,7 +44,8 @@ Every change in this repo has gone through the same loop. Follow it:
 | Plan vs actual | not built — the export's columns are still a guess. Its scope lives on Home, ready to return as a Production tab (§15) |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
 | Tests | five suites, all passing — `npm test` |
-| Real data | `ScheduledProdRptDtl.xls`, `MissingPieceMarkTicket.xlsx` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
+| Real data | `ScheduledProdRptDtl.xls`, `MissingPieceMarkTicket.xlsx`, `EmpTimeExport.xls` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
+| Profiled | all four exports, as of 2026-08-31. Nothing in the app is now fed by a guessed schema |
 
 ### Running it
 
@@ -114,9 +115,14 @@ shell may not pick that up, so prefix commands with
 - **Piece detail is deliberately *not* routed.** There is no stable piece id in
   the export (§11), so there is nothing to put in a URL. Job, person and
   timesheet-job drill-downs are routed; the piece and day panels are not.
-- **Time is outside My Projects, on purpose.** Membership is keyed on the job
-  number and that export's job field is unprofiled free text; scoping on a
-  guess would hide rows silently (§12, §14).
+- **`Location` in the time export is the person's *office*, not the job's
+  plant.** Profiled: 0 of 110 people sit at more than one, while 82 of 267 jobs
+  are charged from several. Do not alias it to "plant" and do not run it through
+  `job-cost/plants.js` (§12).
+- **All four exports carry the job number in `"<no> - <title>"`.** The
+  whitespace-around-dash rule in `splitJob` is load-bearing in *two* schemas
+  now — the time export is 19.2% `00-*` admin jobs, and an unspaced match
+  collapses them onto one key (§12).
 
 ---
 
@@ -144,6 +150,10 @@ quantities differently, and every place they disagree is documented.
 
 Four exports, six sections. The mapping is not one-to-one on purpose: a section
 answers a question and reads whichever sources that question needs (§15).
+
+**All four have been profiled against real files, and all four carry the job
+number in the same `"<number> - <title>"` shape.** That is what lets every one
+of them join, and it is the reason the app is organised around the job.
 
 This started as a single-file React dashboard (`legacy/eng_time_dashboard.html`,
 kept for reference). That file is the origin of the visual language and the
@@ -484,6 +494,13 @@ npm run test:storage    # IndexedDB persistence, against fake-indexeddb
 npm run test:render     # server-renders every view against the sample data
 ```
 
+`test:data` runs against the **real** `EmpTimeExport.xls` when it is present:
+it asserts the schema absorbs every header with none left unmapped, that the job
+number parses on essentially every row (the join depends on it), that dashed
+admin numbers survive intact, and that `Location` still tracks the person rather
+than the job. The counts it prints — rows, people, job numbers, hours, the
+admin share — move between pulls and are printed rather than asserted.
+
 `test:production` also runs against the **real** `ScheduledProdRptDtl.xls` and
 `MissingPieceMarkTicket.xlsx` when those files happen to be sitting in the
 working directory. They are gitignored, so CI only ever sees the synthetic
@@ -523,7 +540,9 @@ headers, and the aggregation invariants that matter: **a rollup conserves the
 total**, **"Other" conserves the remainder**, **a cumulative series is
 monotonically non-decreasing and ends at the group total**.
 
-It also covers the shell (§15), which is why `modules/sections.js` is plain ESM:
+It also covers the timesheet job number — `splitJob`, including the `00-*`
+admin cases the whitespace rule protects (§12) — and the shell (§15), which is
+why `modules/sections.js` is plain ESM:
 
 - **Routing** — a stale bookmark falls back to something real rather than a
   blank page; the job page's id precedes its tab (`#/job/43134/cost`); segments
@@ -532,8 +551,8 @@ It also covers the shell (§15), which is why `modules/sections.js` is plain ESM
 - **The project merge** — one row per job number, a cost-only and a
   schedule-only job both present, and **a rate with no denominator is `null`,
   never `0`**.
-- **The job gather** — each source found separately, and the timesheet match
-  reported as a token match that is never `confident`.
+- **The job gather** — each source found separately, and the timesheet join an
+  equality match on the derived job number (`1000` must not match `100`).
 
 `test:storage` runs the real IndexedDB code path against `fake-indexeddb` and
 asserts that a dataset far larger than the localStorage cap saves and reloads
@@ -679,21 +698,32 @@ company, the second can be picked up now.
       returns as a Production tab, not as a section of its own (§15).
 - [ ] What does the `(RL)` suffix on a piece mark mean, and what are the 51
       zero-quantity rows that still carry a mark? Passed through untouched.
-- [ ] Does the employee time export carry a pay-rate or cost column? Decide
-      first whether pay data should sit in a browser cache at all. Note the job
-      cost reports already carry labor dollars per code (30.x, 40.x), so the
-      cheaper question may be whether timesheet hours can tie to those.
+- [ ] Does the employee time export carry a pay-rate or cost column? The
+      profiled export does **not** — 11 columns, no money (§12). Decide first
+      whether pay data should sit in a browser cache at all. Note the job cost
+      reports already carry labor dollars per code (30.x, 40.x), so the cheaper
+      question may be whether timesheet hours can tie to those.
+- [ ] **What are the `Location` codes `MDS`, `Oxf`, `Win`, `ARK`, `Atl`?** They
+      are offices, not plants (§12) — `Kis`/`Hil`/`Ash`/`Mon`/`Jac`/`Pea` line
+      up with plant names but these five do not. Shown verbatim until someone
+      says what they are. **Do not guess them into `plants.js`.**
+- [ ] **Why is `Emp Number` blank on 46.7% of rows**, covering only 64 of 110
+      people? A field filled for some employment types and not others, or an
+      export setting? The name is the person key either way (§12).
+- [ ] **Should `00-*` admin jobs appear in the Projects list?** They are real
+      job numbers carrying 19.2% of all hours, so they are listed like any
+      other time-only job. If they should be folded into an "overhead" bucket
+      instead, that is a change to `projects/rows.js`.
+- [ ] **Can D&E cost be read against booked hours per job?** The job page now
+      shows both — 60.x cost from the cost report, hours from the timesheet —
+      side by side and deliberately unsummed. Whether they *should* reconcile
+      (is 49-8300 the same work as 60.x?) is a question for whoever owns both
+      reports. `costPerHour` is computed in `projects/rows.js` and shown
+      nowhere until that is answered.
 - [ ] Does CV export actuals and labor estimates per bed-day? CV shows Est/Act
       pairs and a Total Emp row that the current export lacks (§11).
 
 ### Could be built now
-
-- [ ] **Employee Time ↔ job cost join.** The cost↔production join works on job
-      number (§13). Employee Time's `job` field has never been profiled against
-      a real export (§12), so confirm its format before extending the same join.
-      This is the single highest-value open item now: it unblocks Time joining
-      My Projects (§14) and turns the job page's Hours block from a labelled
-      guess into a real figure (§15).
 
 - [ ] **Weekly trend for job cost.** Each report is a snapshot with no date
       axis; `Current Mo Act` is the only period figure and it is month-to-date.
@@ -707,6 +737,10 @@ company, the second can be picked up now.
 - [x] **Section names, navigation, routing and the front door** — reworked
       2026-08-31 (§15). `docs/interface-proposal.md` has the diagnosis and the
       mapping of every old surface to its new home.
+- [x] **Employee Time ↔ everything join** — the export was profiled 2026-08-31
+      and carries the job number in `"<no> - <title>"`, parsing on 100.0% of
+      rows. Time now joins on the job number like every other source and takes
+      part in My Projects (§12, §14).
 - [ ] **Merging exports that cover different date spans.** Loading a second one
       currently replaces the dataset. Merging needs a dedupe key — probably
       date + person + job + task. IndexedDB has the headroom.
@@ -1132,23 +1166,91 @@ The first module, and the one the legacy single-file dashboard
 (`legacy/eng_time_dashboard.html`) was rewritten from. The folder keeps its
 original name; the section is `time`.
 
-**Caveat a new agent should know:** unlike production, this schema was derived
-from the legacy tool's parser, **not** profiled against a real export. The
-column names are believed right and the aliases absorb drift, but nobody has
-verified them against a live file the way `ScheduledProdRptDtl.xls` was. Treat
-`schema.js` here as informed guesswork until an export confirms it.
+**Profiled against the real `EmpTimeExport.xls` on 2026-08-31**, which closed
+the last guessed schema in the app. The headline: the inferred schema was
+*right* — every required column mapped on the first try — and the export turned
+out to carry the job number, which is what turned the timesheet join from a
+labelled guess into a real one.
 
 ### The export
 
-`Effective Date`, `First Name`, `Last Name`, `Job Name`, `Hours` (required);
-`Location`, `GL Code`, `Labor Task`, `Deptment` (optional).
+One sheet, a flat table, 11 columns, 29,267 rows covering 2026-01-01 →
+2026-08-31 (218 days, 110 people, 266 job numbers, 124,035 hours). Genuine BIFF
+`.xls`, not HTML-in-disguise.
+
+| Column | Field | Notes |
+|---|---|---|
+| Effective Date | `date` | Excel serial |
+| First Name / Last Name | `firstName` `lastName` | → `name`, the person key |
+| Emp Number | `empNo` | **blank on 46.7% of rows**, covering only 64 of the 110 people. Mapped and shown; never the person key |
+| Location | `loc` | 12 codes — `Kis`, `Hil`, `MDS`, `Ash`, `Oxf`, `Mon`, `Jac`, `Win`, `ARK`, `Pea`, `Atl`, `Corp`. **The person's office, not the job's plant** — see below |
+| Job Name | `job` | `"NNNNN - TITLE"` — **the same shape production uses**; → `jobNo` + `jobTitle` |
+| GL Code | `gl` | 13 values, `"49-8300 - Architectural Drafting/Eng"` |
+| Labor Task | `task` | 41 values |
+| Deptment | `dept` | 9 values. 92.8% of rows are `ENG - Engineering` |
+| Hours | `hrs` | 0.05 – 18.5. **No zeros and no negatives in the real export** |
+| Summary | `note` | free text the person typed, filled on 31% of rows |
 
 **`Deptment` is Concrete Vision's own misspelling** and is the canonical label in
 the schema, with correct spellings as aliases. Do not "fix" it.
 
-Derived: `name` (first + last), which is what every view groups people by.
-`isEmptyRow` drops a row with no date, no name, or zero hours — unlike
-production, a zero here carries no information.
+`isEmptyRow` drops a row with no date, no name, or zero hours. The real export
+contains no zero-hour rows, so nothing is actually dropped — but unlike
+production, a zero here would carry no information.
+
+### The job number, and why this export joins
+
+**`Job Name` parses to a job number on 100.0% of rows** (29,262 of 29,267; the 5
+that fail carry a title with no number at all, and keep `jobNo: ""`). It is the
+same `"<no> - <title>"` format the schedule uses, so `splitJob` in `schema.js`
+is the production rule copied deliberately, including **the requirement that the
+separator be surrounded by whitespace**.
+
+That rule is not cosmetic here. **19.2% of all hours sit on `00-*` admin jobs**
+(`00-001 - Corporate Admin Job` … `00-008`), and an unspaced match would cut
+`00-001` in half and collapse every one of them onto a single `00` key. The bug
+that was fixed once in `production/schema.js` would have been far more expensive
+in this export. There is a test for it.
+
+How far the join reaches, against the reports loaded on 2026-08-31:
+
+| | |
+|---|---|
+| timesheet job numbers | 266 |
+| also in the cost reports | 86 (32.3%) |
+| also in the schedule | 59 (22.2%) |
+| in either | 114 (42.9%) |
+| **hours on a job cost or schedule knows** | **73.7% of all hours** |
+| **hours on *project* jobs (excluding `00-*`)** | **89.8%** |
+
+The 145 project job numbers with no cost or schedule record are expected: the
+cost reports cover **active** jobs only and the schedule covers **one month**.
+
+### `Location` is an office, not a plant
+
+The most important negative result from the profile, and the one most likely to
+be "fixed" wrongly later.
+
+- **0 of 110 people appear at more than one Location.**
+- **82 of 267 jobs are charged from more than one.**
+
+So it tracks the *person*, not the job. Cross-tabulating it against the plant a
+job is actually costed at gives a diffuse mess — `Kis` against Kissimmee (22
+jobs) but also Hillsboro (10), Monroeville (8), Jacksonville (3). That is what
+you would expect of a company whose engineers draft other plants' jobs, and
+92.8% of these rows are engineering.
+
+**Do not map `Location` to `job-cost/plants.js`, and do not alias it to
+"plant".** `MDS`, `Oxf`, `Win`, `ARK`, `Atl` and `Corp` have no plant at all.
+There is a test asserting the person/job asymmetry, so if it ever flips someone
+will be told rather than left to assume.
+
+### The person key is the name, not `Emp Number`
+
+`Emp Number` is blank on 46.7% of rows and covers 64 of the 110 people, so
+grouping on it would silently drop half of everyone's hours into an unknown
+bucket. Profiled: no employee number carries two names, but one name carries two
+numbers. The name stays the key; the number is mapped and shown.
 
 ### Views (`modules/employee-time/views/`)
 
@@ -1162,16 +1264,13 @@ production, a zero here carries no information.
 | `ProjectDetail.jsx` | drill-down | One job: total burn, cumulative by person, hours by task, team table. Routed at `#/time/job/<name>`. |
 
 The **Projects** tab is labelled **Jobs**, for one word per concept across the
-app (§15) — but it carries a note saying these are job *names* as typed on
-timesheets, not job numbers, and that they do not join to the Projects section.
+app (§15). Each row carries the job number as well as the name, and a `Job →`
+button out to the whole project across every source.
 
-**This section is deliberately outside the My Projects scope.** Membership is
-keyed on the job number (§14) and this export's `job` field is unprofiled free
-text. Scoping it on a name match would hide rows silently, which is worse than
-not scoping at all. The job page's Hours block has the same problem and says so
-in an amber notice on every job it matches: `assemble.js` sets
-`hours.confident: false` and nothing may set it true until a real export is
-profiled. **That profiling is the one change that unblocks both.**
+**This section takes part in the My Projects scope**, keyed on the job number
+like every other section (§14). It was excluded until the export was profiled,
+because scoping on a name match would have hidden rows rather than narrowed
+them; that reason is gone.
 
 `useTimeFilters.js` holds the shared date-window / location / department filter
 state, mirroring `useProductionFilters.js`.
@@ -1514,15 +1613,11 @@ Keep saying plainly which changes were and were not visually verified.
 
 ## 14. My Projects
 
-A starred subset of jobs, persisted, scoping Projects, Production, Drawings and
-Cost — all four read the same list. It started as a job-cost feature and moved
+A starred subset of jobs, persisted, scoping **every section** — Projects,
+Production, Drawings, Cost and Time all read the same list. It started as a job-cost feature and moved
 into `core/myProjects.js` on 2026-08-31, because the same handful of projects is
 what an engineering manager wants to see in all of them: starring a job in one
 place and having to star it again in the next is the thing this avoids.
-
-**Time is the one section outside it, deliberately** — its job field is
-unprofiled free text and cannot be keyed on the job number (§12). That is stated
-in the section rather than worked around.
 
 **The switch lives in the shell header**, not in a section's filter row. It is
 app-wide state; mounting it inside two sections made it look like a per-section
@@ -1686,13 +1781,16 @@ presentation only. Rules it holds to:
   forward month, the ticket report is a snapshot.
 - "Not loaded" and "loaded but says nothing about this job" are **visibly
   different**. Neither renders zeros.
-- The Hours block is a **labelled guess** and says so in amber every time it
-  matches (§12). `hours.confident` stays `false` until the export is profiled.
+- The Hours block was a labelled guess until the time export was profiled on
+  2026-08-31. It is now a real join on the job number like every other source,
+  and it breaks the hours down by task and by person — the question the cost
+  report cannot answer, since 60.x books cost to a code rather than time to a
+  person. The two are shown side by side and **never added** (§12).
 
 ### Projects: the merged table
 
-`modules/projects/rows.js` merges the cost job list and the schedule job list
-into one row per job number. A job present in only one source leaves the other
+`modules/projects/rows.js` merges the cost job list, the schedule job list, the
+ticket report and the timesheet into one row per job number. A job present in only one source leaves the other
 side **dashed, not zeroed** — a dash says "this source doesn't mention it", a
 zero would say "it has none". Tested.
 

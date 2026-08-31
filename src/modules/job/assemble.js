@@ -16,22 +16,21 @@
  * page could most easily invite.
  */
 
-/** Tokens in a timesheet job name, for the best-effort hours match below. */
-const tokens = (s) => String(s || "").toUpperCase().split(/[^A-Z0-9-]+/).filter(Boolean);
-
 /**
- * Timesheet rows that look like they belong to this job.
+ * Timesheet rows for this job.
  *
- * **This is a guess, and it is labelled as one everywhere it surfaces.** The
- * employee time export has never been profiled against a real file (CLAUDE.md
- * §12), so its `job` field is free text with no confirmed job number in it. A
- * token match on the number is the most that can be claimed honestly; it must
- * never be presented as the same join the cost and ticket reports get.
+ * **This is a real join, on the same key as everything else.** The employee
+ * time export was profiled on 2026-08-31 and its `Job Name` carries the job
+ * number in the same `"<no> - <title>"` shape the schedule uses — it parsed on
+ * 100.0% of rows. `jobNo` is derived at parse time by the schema, so this is a
+ * plain equality match, not a string search.
+ *
+ * It was a labelled guess before that profile. It is not any more, and the
+ * caveats that said so have been removed rather than left to rot.
  */
 export function matchTimeRows(timeRows, jobNo) {
   if (!jobNo) return [];
-  const want = String(jobNo).toUpperCase();
-  return (timeRows || []).filter((r) => tokens(r.job).includes(want));
+  return (timeRows || []).filter((r) => r.jobNo === jobNo);
 }
 
 const sum = (rows, pick) => rows.reduce((a, r) => a + (pick(r) || 0), 0);
@@ -42,6 +41,13 @@ const span = (rows, pick) => {
 };
 
 const uniq = (rows, pick) => [...new Set(rows.map(pick).filter(Boolean))].sort();
+
+/** Hours per key, biggest first. */
+const rollup = (rows, pick) => {
+  const m = new Map();
+  for (const r of rows) m.set(pick(r), (m.get(pick(r)) || 0) + (r.hrs || 0));
+  return [...m].map(([key, hrs]) => ({ key, hrs })).sort((a, b) => b.hrs - a.hrs);
+};
 
 /**
  * Assemble everything known about one job.
@@ -140,9 +146,13 @@ export function assembleJob({
       hours: sum(hours, (r) => r.hrs),
       people: uniq(hours, (r) => r.name).length,
       range: span(hours, (r) => r.date),
-      // Never true until the export is profiled and a real key is confirmed.
-      confident: false,
-      names: uniq(hours, (r) => r.job),
+      // Joined on the job number, like every other source here.
+      confident: true,
+      // What the work was, which is the question the cost report can't answer
+      // per person: 60.x tells you D&E cost, not who spent the day on it.
+      byTask: rollup(hours, (r) => r.task || "(no task)"),
+      byPerson: rollup(hours, (r) => r.name),
+      offices: uniq(hours, (r) => r.loc),
     },
     // Which sources know this job at all — what makes "not scheduled" legible
     // as a fact rather than as a gap in the page.

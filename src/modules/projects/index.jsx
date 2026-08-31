@@ -16,7 +16,7 @@ import { SortableTh, useSort, compareBy, Badge, MiniBar } from "../../components
 import { StarButton, NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
 import { hrefFor, go } from "../../core/routing.js";
-import { money, ratio, count, perSf } from "../../core/format.js";
+import { money, ratio, count, perSf, fmt } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
 import ProductionLink from "../job-cost/views/ProductionLink.jsx";
 
@@ -33,8 +33,9 @@ export default function ProjectsModule({ tab }) {
       costJobs: app.cost.data.jobs,
       scheduleRows: app.schedule.rows,
       ticketRows: app.tickets.rows,
+      timeRows: app.time.rows,
     }),
-    [app.cost.data.jobs, app.schedule.rows, app.tickets.rows]
+    [app.cost.data.jobs, app.schedule.rows, app.tickets.rows, app.time.rows]
   );
 
   // My Projects narrows the pool itself, before any other filter, so no view
@@ -57,14 +58,14 @@ export default function ProjectsModule({ tab }) {
       .sort(compareBy(sort.col, sort.dir));
   }, [scoped, presence, plant, search, sort]);
 
-  const nothingLoaded = !app.costLib.sources.length && !app.schedule.rows.length;
+  const nothingLoaded = !app.costLib.sources.length && !app.schedule.rows.length && !app.time.rows.length;
 
   if (nothingLoaded) {
     return (
       <NeedsSource
         title="Projects"
-        file="the weekly Job Cost Reports, the Scheduled Production Report, or both"
-        blurb="Every job across cost, schedule and drawings, in one list. Load either source and the jobs it knows about appear here; load both and they line up on the job number."
+        file="the weekly Job Cost Reports, the Scheduled Production Report, or the employee time export"
+        blurb="Every job across cost, schedule, drawings and booked hours, in one list. Load any of those and the jobs it knows about appear here; load more and they line up on the job number."
       >
         <a className="btn" href={hrefFor("sources")}>Add a file</a>
       </NeedsSource>
@@ -79,7 +80,11 @@ export default function ProjectsModule({ tab }) {
     <div className="jc">
       <PageHeader
         title="Projects"
-        subtitle={`${count(all.length)} jobs known to the loaded files · ${count(all.filter((r) => r.costed && r.scheduled).length)} in both cost and schedule`}
+        subtitle={
+          `${count(all.length)} jobs known to the loaded files · ` +
+          `${count(all.filter((r) => r.costed && r.scheduled).length)} in both cost and schedule` +
+          (app.time.rows.length ? ` · ${count(all.filter((r) => r.timed).length)} with booked hours` : "")
+        }
       />
 
       <RouteTabs
@@ -172,6 +177,7 @@ function JobTable({ rows, sort, onSort, mine }) {
             <SortableTh column="pieces" label="Pieces Scheduled" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="days" label="Pour Days" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="missingTickets" label="No Ticket" sort={sort} onSort={onSort} align="right" />
+            <SortableTh column="hours" label="Hours Booked" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
@@ -189,6 +195,7 @@ function JobTable({ rows, sort, onSort, mine }) {
               <td className="nowrap">
                 {r.costed && <Badge tone="blue" title="Has a cost report">cost</Badge>}
                 {r.scheduled && <Badge tone="green" title="Scheduled in the loaded export">sched</Badge>}
+                {r.timed && <Badge tone="amber" title="Timesheet hours booked to this job">time</Badge>}
               </td>
               <Cell on={r.costed}>{money(r.netContract)}</Cell>
               <Cell on={r.costed}>{r.pctBilled == null ? "—" : ratio(r.pctBilled)}</Cell>
@@ -211,6 +218,9 @@ function JobTable({ rows, sort, onSort, mine }) {
                   ? <Badge tone="red" title={`${r.unassigned} with no drafter assigned`}>{r.missingTickets}</Badge>
                   : <span className="muted">—</span>}
               </td>
+              <Cell on={r.timed}>
+                <span title={`${r.people} ${r.people === 1 ? "person" : "people"}`}>{fmt(r.hours)}</span>
+              </Cell>
             </tr>
           ))}
         </tbody>

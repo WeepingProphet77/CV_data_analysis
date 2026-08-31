@@ -1,16 +1,11 @@
 /**
  * Time — analysis of Concrete Vision's timesheet export.
  *
- * The one caveat worth repeating wherever this module is touched: unlike the
- * others, its schema was derived from the legacy single-file tool rather than
- * profiled against a real export (CLAUDE.md §12). The column names are believed
- * right and the aliases absorb drift, but nobody has checked.
- *
- * That is also why this section does **not** take part in the app-wide My
- * Projects scope. Membership is keyed on the job number, and this export's job
- * field is free text with no confirmed number in it — scoping on a guess would
- * silently hide rows. The section says so rather than pretending. Profiling a
- * real export is what unblocks it.
+ * Profiled against a real export on 2026-08-31, which closed the last standing
+ * caveat in the app: the schema was right, and `Job Name` carries the job
+ * number in the same shape the schedule uses. So these hours join to cost, to
+ * the schedule and to the ticket report on the job number like everything else,
+ * and this section takes part in the app-wide My Projects scope (§12, §14).
  */
 import React, { useMemo, useState } from "react";
 import { useAppData } from "../../core/appData.js";
@@ -19,6 +14,8 @@ import { PageHeader, RouteTabs } from "../../components/Page.jsx";
 import { ImportPrompt, ImportButton } from "../../components/FileImport.jsx";
 import { RemoveButton } from "../../components/SourceStrip.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
+import { NoProjectsYet } from "../../components/MyProjects.jsx";
+import { SCOPE_ALL } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
 import { hrefFor, go } from "../../core/routing.js";
 import { count } from "../../core/format.js";
@@ -34,13 +31,23 @@ import ProjectDetail from "./views/ProjectDetail.jsx";
 
 export default function TimeModule({ tab, route }) {
   const app = useAppData();
+  const mine = app.mine;
   const data = app.time;
-  const f = useTimeFilters(data.rows);
+  const f = useTimeFilters(data.rows, mine);
   const [search, setSearch] = useState("");
 
   const total = useMemo(() => sumBy(f.filtered, (r) => r.hrs), [f.filtered]);
   const peopleCount = useMemo(() => new Set(f.filtered.map((r) => r.name)).size, [f.filtered]);
   const jobCount = useMemo(() => new Set(f.filtered.map((r) => r.job)).size, [f.filtered]);
+
+  // Starred jobs nobody has booked time to. Reported, never pruned (§14).
+  const bookedJobNos = useMemo(
+    () => new Set(data.rows.map((r) => r.jobNo).filter(Boolean)),
+    [data.rows]
+  );
+  const stranded = mine.active
+    ? mine.memberList.filter((n) => !bookedJobNos.has(n))
+    : [];
 
   if (!data.rows.length) {
     return (
@@ -127,23 +134,38 @@ export default function TimeModule({ tab, route }) {
         searchPlaceholder={tab === "people" ? "Search people…" : "Search jobs…"}
       />
 
-      {tab === "people" && (
-        <People rows={f.filtered} total={total} search={search} onOpenPerson={openPerson} />
-      )}
-      {tab === "jobs" && (
+      {mine.scope !== SCOPE_ALL && !mine.count ? (
+        <NoProjectsYet onShowAll={() => mine.setScope(SCOPE_ALL)} />
+      ) : (
         <>
-          <Projects rows={f.filtered} total={total} search={search} onOpenProject={openJob} />
-          <p className="hint">
-            These are job <em>names</em> exactly as typed on timesheets. They are not matched to
-            job numbers, so this list does not join to{" "}
-            <a className="link" href={hrefFor("projects", "jobs")}>Projects</a> — the export has
-            never been checked against a real file, and guessing the key would hide rows rather
-            than miss them visibly.
-          </p>
+          {stranded.length > 0 && (
+            <div className="notice amber">
+              {stranded.length} of your {mine.count} starred projects{" "}
+              {stranded.length === 1 ? "has" : "have"} no hours booked to them
+              ({stranded.slice(0, 8).join(", ")}{stranded.length > 8 ? "…" : ""}) — nobody has
+              charged time to them in this export. They stay in your list.
+            </div>
+          )}
+
+          {tab === "people" && (
+            <People rows={f.filtered} total={total} search={search} onOpenPerson={openPerson} />
+          )}
+          {tab === "jobs" && (
+            <>
+              <Projects rows={f.filtered} total={total} search={search} onOpenProject={openJob}
+                        onOpenJobNo={(jobNo) => go("job", jobNo)} />
+              <p className="hint">
+                Every job here carries its number, so clicking through to the whole project —
+                cost, schedule and drawings alongside these hours — works from{" "}
+                <a className="link" href={hrefFor("projects", "jobs")}>Projects</a> or from the
+                arrow on any row.
+              </p>
+            </>
+          )}
+          {tab === "cumulative" && <Cumulative rows={f.filtered} />}
+          {(tab === "overview" || !tab) && <Overview rows={f.filtered} onOpenProject={openJob} />}
         </>
       )}
-      {tab === "cumulative" && <Cumulative rows={f.filtered} />}
-      {(tab === "overview" || !tab) && <Overview rows={f.filtered} onOpenProject={openJob} />}
     </div>
   );
 }
