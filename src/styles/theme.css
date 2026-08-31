@@ -115,7 +115,44 @@ body {
   flex-wrap: wrap; gap: 10px;
   border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 14px;
 }
-.modnav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
+/* Shell header ---------------------------------------------------------
+   The app title, the app-wide project scope and the loaded-file chip. The
+   scope switch and the chip live here because both describe the whole app:
+   the scope is one saved list that narrows every section, and the chip carries
+   warnings (a ticket report that misses the schedule, plants at mixed cut-off
+   dates) that change how every figure under them should be read. */
+
+.appbar { margin-bottom: 16px; }
+.appbar-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.brand { text-decoration: none; display: block; }
+.brand-name {
+  display: block; font-size: 15px; font-weight: 800; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--accent);
+  text-shadow: 0 0 16px var(--accent-glow);
+}
+.brand-sub {
+  display: block; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--text-muted); margin-top: 2px;
+}
+.appbar-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.datachip {
+  text-decoration: none; padding: 6px 12px; border-radius: var(--radius);
+  border: 1px solid var(--rule); background: var(--surface-3);
+  color: var(--text-secondary); font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; white-space: nowrap;
+}
+.datachip:hover { color: var(--accent-dim); border-color: var(--border); }
+.datachip[aria-current="page"] { color: var(--accent); border-color: var(--border-strong); }
+/* Amber, never red: something needs reading, nothing is broken. */
+.datachip.warn {
+  color: #ecb84a; border-color: rgba(201,133,0,.55); background: rgba(201,133,0,.12);
+}
+
+.modnav { display: flex; gap: 4px; flex-wrap: wrap; }
 .modnav a {
   padding: 6px 14px; border: 1px solid rgba(50, 85, 120, 0.35);
   border-radius: var(--radius); text-decoration: none;
@@ -162,13 +199,17 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
-.tabs button {
+/* Tabs are links, so every one of them is an address that can be bookmarked
+   and reached with the Back button. They are styled as the buttons they were. */
+.tabs button, .tabs a {
   padding: 7px 15px; border: 1px solid rgba(50, 85, 120, 0.35);
   border-radius: 3px 3px 0 0; cursor: pointer; font-family: inherit;
   font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
   background: rgba(24, 48, 76, 0.5); color: var(--text-muted); transition: all 0.15s;
 }
-.tabs button[aria-selected="true"] {
+.tabs a { text-decoration: none; display: inline-block; }
+.tabs button:hover, .tabs a:hover { color: var(--accent-dim); }
+.tabs button[aria-selected="true"], .tabs a[aria-selected="true"] {
   background: rgba(0, 220, 255, 0.18); color: var(--accent);
   border-color: var(--border-strong); box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
 }
@@ -260,6 +301,32 @@ tr.clickable:hover { background: rgba(0, 220, 255, 0.10); box-shadow: inset 2px 
 }
 .dropzone.over { background: rgba(0, 220, 255, 0.14); border-color: var(--accent); }
 .hint { font-size: 10px; color: var(--text-muted); max-width: 460px; line-height: 1.6; }
+
+/* Home ----------------------------------------------------------------- */
+/* Entry points as tasks rather than as module names. A task whose file is not
+   loaded is still shown -- learning that the app can do this, and which export
+   it needs, is the point -- so it is dimmed rather than hidden. */
+
+.tasklist {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;
+}
+.taskcard {
+  display: flex; flex-direction: column; gap: 6px; text-decoration: none;
+  padding: 12px 14px; border-radius: var(--radius);
+  border: 1px solid var(--border); background: rgba(16, 35, 65, 0.7);
+  transition: all 0.15s;
+}
+.taskcard:hover { border-color: var(--border-strong); background: rgba(0, 220, 255, 0.08); }
+.taskcard.pending { opacity: 0.62; }
+.taskname {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.5px; color: var(--accent-dim);
+}
+.taskdetail { font-size: 11px; color: var(--text-secondary); line-height: 1.6; }
+.taskneeds { font-size: 10px; color: var(--text-muted); }
+
+/* Held while the saved records resolve. Without it a loaded file flashes as an
+   empty state and a saved My Projects choice flashes as "All". */
+.bootwait { min-height: 60vh; }
 
 /* Scrollbars ----------------------------------------------------------- */
 
@@ -437,7 +504,7 @@ tr.clickable:hover { background: rgba(0, 220, 255, 0.10); box-shadow: inset 2px 
 .jc td.num, .jc th.num { text-align: right; }
 
 /* The loaded-plants strip. One row per source, each independently replaceable
-   -- unlike DataBar, which describes a single file. */
+   -- one row per loaded file. */
 .srclist { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .srcrow {
   display: grid; grid-template-columns: minmax(120px, 1fr) auto auto minmax(0, 2fr) auto;

@@ -134,7 +134,7 @@ export default function ProductionLink({ jobs, qtyByJob, production, onOpenJob }
             <table>
               <thead>
                 <tr>
-                  <SortableTh column="jobNo" label="Job #" sort={sort} onSort={onSort} />
+                  <SortableTh column="jobNo" label="Job No" sort={sort} onSort={onSort} />
                   <SortableTh column="jobTitle" label="Job" sort={sort} onSort={onSort} />
                   <SortableTh column="plant" label="Plant" sort={sort} onSort={onSort} />
                   <SortableTh column="actCost" label="Actual Cost" sort={sort} onSort={onSort} align="right" />
@@ -191,7 +191,7 @@ export default function ProductionLink({ jobs, qtyByJob, production, onOpenJob }
           </p>
           <div className="table-wrap" style={{ maxHeight: 320 }}>
             <table>
-              <thead><tr><th>Job #</th><th>Job</th><th>Plant</th><th className="num">Pieces</th></tr></thead>
+              <thead><tr><th>Job No</th><th>Job</th><th>Plant</th><th className="num">Pieces</th></tr></thead>
               <tbody>
                 {unmatched.scheduledOnly.map((s) => (
                   <tr key={s.jobNo}>
@@ -219,7 +219,7 @@ export default function ProductionLink({ jobs, qtyByJob, production, onOpenJob }
           </p>
           <div className="table-wrap" style={{ maxHeight: 320 }}>
             <table>
-              <thead><tr><th>Job #</th><th>Job</th><th>Plant</th><th className="num">Actual Cost</th></tr></thead>
+              <thead><tr><th>Job No</th><th>Job</th><th>Plant</th><th className="num">Actual Cost</th></tr></thead>
               <tbody>
                 {unmatched.costedOnly.slice(0, 200).map((j) => (
                   <tr key={j.key} className="clickable" onClick={() => onOpenJob(j.key)}>

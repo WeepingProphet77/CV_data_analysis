@@ -12,16 +12,34 @@ and nothing but code lives in this repository. Your last import is cached in the
 browser's IndexedDB, so a refresh doesn't mean re-uploading; large exports
 (100k+ rows) are fine.
 
-## Modules
+## How it is organised
 
-| Module | Status | What it does |
-| --- | --- | --- |
-| **Employee Time** | Built | Timesheet hours by person, project, labor task and date. Sortable tables, drill-down on any person or project, and cumulative-hours plots. |
-| **Production** | Built | Scheduled pours by plant — month calendar, charts, bed utilization, jobs and piece detail. |
-| **Job Cost** | Built | Weekly job cost by plant — contract, billing, projected margin, cost-code overruns, and a cost-versus-schedule comparison. |
-| **Schedule** | Placeholder | Scheduled versus actual dates, slip, weekly load. |
+The application is about **jobs**. Everything else — a timesheet, a pour
+schedule, a cost workbook, a ticket report — is a source of evidence about jobs.
+So the sections are named after the question they answer rather than after the
+file that feeds them, and any one section may read several files.
 
-### Employee Time
+| Section | What it answers |
+| --- | --- |
+| **Home** | What this is, what is loaded, and where to start. Opens here. |
+| **Projects** | Every job across cost, schedule and drawings, in one list. |
+| **Production** | What is being poured, on which bed, on which day. |
+| **Drawings** | Which pieces have no ticket drawing, soonest-cast first. |
+| **Cost** | Margin, cost codes, and the drafting & engineering roll-up. |
+| **Time** | Where timesheet hours are going. |
+
+Two more pages are addressed but not in the nav: **Sources**, reached from the
+file chip in the header, and the **job page** at `#/job/<job number>` — one
+project across every loaded source, reached by clicking any job number anywhere.
+
+Every tab is a real address, so it can be bookmarked and shared, and the browser
+Back button works the way you expect.
+
+**Plan vs actual** — scheduled against actual dates, slip and weekly load — is
+not built. Its intended scope is on Home; the column list is still a guess and
+needs confirming against a real export.
+
+### Time
 
 - **Overview** — totals, cumulative burn for the whole selection, top projects ranked.
 - **People / Projects** — sortable, searchable tables; click any row to drill in.
@@ -50,16 +68,58 @@ these are pours that are *scheduled*, so the UI never claims anything was produc
   shaded by pieces, square feet, cubic yards or linear feet, listing the busiest
   beds. Click a day for the bed-by-bed breakdown: every piece, its job, phase,
   position and pour number, plus bed comments.
-- **Charts** — daily scheduled volume, cumulative volume, and rankings by plant,
+- **Overview** — daily scheduled volume, cumulative volume, and rankings by plant,
   job and phase, in whichever measure you pick.
 - **Beds** — utilization per bed, including days a bed is tied up casting nothing.
-- **Jobs** — per-job rollup with pieces, SF, CY, bed count and date span.
 - **Pieces** — the full searchable, sortable detail table.
+- **Schedule Changes** — each upload compared against the one it replaced: what
+  moved earlier, what moved later, what is new and what was dropped. Appears once
+  a schedule has been replaced at least once.
 
 Rows with no quantity are kept, not dropped: they are bed activity — mold builds
 and maintenance — and an occupied bed is real schedule information.
 
-### Job Cost
+Per-job totals live in **Projects**, alongside the cost columns for the same jobs.
+
+### Drawings
+
+Reads the **Missing Piece Mark Ticket** report — every piece with no ticket
+drawing. Filter by how soon the piece is cast (already passed, within 7 days,
+8–30 days, later), then read it three ways: **Queue** (the pieces themselves),
+**By Job**, **By Drafter**. Pieces with nobody assigned get their own bucket
+rather than being folded into a total — a blank "Drawn By" is not a person.
+
+If the schedule is loaded too, the pieces it names are flagged on the planning
+board. **The two reports are pulled separately and often cover different
+months**, so the section computes how far they actually overlap and says so, in
+red, above everything else: a board flagging nothing means "every piece is
+drawn" only when the ticket report covers the same dates.
+
+### Projects
+
+One row per job number, filled in from whichever sources know about it — contract
+and margin from the cost reports, pieces and pour days from the schedule, missing
+drawings from the ticket report. A job present in only one source leaves the other
+side dashed, never zeroed. Filter by which sources a job appears in to find
+"costed but not scheduled" or "scheduled but not costed".
+
+**Cost vs Schedule** joins the two systems on job number so you can read how far
+a job has got against what is booked to pour next. The two are shown side by side
+and never added together: cost figures are cumulative to date, the schedule is a
+forward month.
+
+### The job page
+
+Click any job number anywhere and you get the whole project on one page: cost,
+schedule, drawings and hours, each stating which report it came from and as of
+when. A source that isn't loaded says so; a source that is loaded but says
+nothing about that job says *that* instead. Neither renders zeros.
+
+The hours block is the one honest exception — it matches on the job number
+appearing in the timesheet's free-text job name, and labels itself a guess,
+because that export has never been checked against a real file.
+
+### Cost
 
 Reads the **Job Cost Report — Active Jobs** workbook, one per plant. Unlike the
 other modules this one keeps a **library**: every plant's report stays loaded, and
@@ -79,23 +139,20 @@ misread.
   pieces designed, and which jobs are being *designed* more slowly than the job is
   spending, which is the list worth reading first. Hours and rates sit below the
   money, with a note on how far they can be trusted. Works best with My Projects on.
-- **Jobs** — every active job, sortable on any column: contract, % billed,
-  projected and actual cost, cost progress, and projected margin.
 - **Cost Codes** — every cost code rolled up *across* jobs, with the codes running
   over projection flagged. The source system reports per job, so this view is the
   one thing it can't show you.
-- **vs Production** — joins the cost reports to the scheduled production data on
-  job number, so you can read how far a job has got against what is booked to pour
-  next. Jobs present in only one of the two systems are listed rather than hidden.
-- **Job detail** — the whole report for one job: the contract header, every cost
+- **Full cost report** — the whole report for one job: the contract header, every cost
   line grouped as the report groups them, quantity progress, the lines running
   over, and every field the report carries including the blank ones. Each group
   of lines closes with a subtotal carrying the same completion percentage and bar
   as the lines above it.
 
-**My Projects.** Star any job with the ☆ in the Jobs table or on its detail page,
-then switch the toggle from *All Projects* to *My Projects* — every tab, including
-the charts and the production comparison, narrows to just those jobs. The list is
+**My Projects.** Star any job with the ☆ in a job table or on its job page, then
+switch the toggle in the header from *All Projects* to *My Projects* — Projects,
+Production, Drawings and Cost all narrow to just those jobs. (Time does not: its
+job field is free text with no job number in it, so scoping it would hide rows
+rather than narrow them, and the section says so.) The list is
 saved in your browser and stays exactly as you left it until you add or remove
 something. A starred job whose plant isn't currently loaded stays in the list and
 is reported rather than quietly dropped.
@@ -120,10 +177,10 @@ export versions still loads — including Concrete Vision's own `Deptment`
 misspelling. If a required column is genuinely absent, the importer says which
 one and lists the headers it did find.
 
-Employee Time expects: `Effective Date`, `First Name`, `Last Name`, `Job Name`,
+The employee time export expects: `Effective Date`, `First Name`, `Last Name`, `Job Name`,
 `Hours` (required), plus `Location`, `GL Code`, `Labor Task`, `Deptment` (optional).
 
-Job Cost is the exception: it is a formatted, multi-sheet workbook rather than a
+The job cost report is the exception: it is a formatted, multi-sheet workbook rather than a
 table, so it accepts `.xlsx`/`.xls` only and is read by its own parser. It expects
 one worksheet per job, the job number and name in cell A3, and a
 `Task` / `Description` header row. The plant is taken from the filename.
@@ -148,4 +205,6 @@ Deploys currently go out with `npm run deploy`, which publishes the build to the
 `gh-pages` branch. Automatic deployment on push to `main` is ready to switch on —
 see the deployment section of [CLAUDE.md](CLAUDE.md).
 
-See [CLAUDE.md](CLAUDE.md) for architecture, conventions and how to add a module.
+See [CLAUDE.md](CLAUDE.md) for architecture, conventions and how to add a section
+or a new export, and [docs/interface-proposal.md](docs/interface-proposal.md) for
+why the interface is shaped this way.

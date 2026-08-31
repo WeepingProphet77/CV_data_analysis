@@ -25,23 +25,6 @@ export function StatCard({ label, value, sub, small }) {
   );
 }
 
-export function Tabs({ tabs, active, onChange }) {
-  return (
-    <div className="tabs" role="tablist">
-      {tabs.map((t) => (
-        <button
-          key={t.id}
-          role="tab"
-          aria-selected={active === t.id}
-          onClick={() => onChange(t.id)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function BackLink({ children, onClick }) {
   return <button className="backlink" onClick={onClick}>{"← "}{children}</button>;
 }

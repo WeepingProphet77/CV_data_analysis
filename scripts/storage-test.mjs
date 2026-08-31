@@ -182,11 +182,16 @@ ok("toggling adds and removes one job number",
    toggleMember(["43134", "45154"], "43134").join() === "45154");
 
 /*
- * The schedule baseline. It is a third record in the production module, and the
- * rules that matter are: it survives a reload, it is separate from the schedule
- * it describes, and clearing the schedule takes it with it — a baseline that
- * outlived its data would compare a fresh import against a file nobody
- * remembers loading.
+ * The schedule baseline. It is a third record, and the rules that matter are:
+ * it survives a reload, it is separate from the schedule it describes, and
+ * clearing the schedule takes it with it — a baseline that outlived its data
+ * would compare a fresh import against a file nobody remembers loading.
+ *
+ * Note what this does and does not cover. It asserts the *storage* rule, with
+ * the clear simulated by deleting both keys. The code that actually pairs them
+ * is `clearSchedule` in src/app/AppData.jsx (§15), and it is not reachable from
+ * node — it is a hook, and effects don't run under server rendering. If you
+ * touch that function, this suite will not catch you.
  */
 console.log("\nSchedule movement baseline");
 const schedKey = storeKey("production");

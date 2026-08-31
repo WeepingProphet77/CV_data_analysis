@@ -1,10 +1,10 @@
 /**
  * The missing-ticket import strip, and the empty state that invites the file.
  *
- * The production module holds two exports at once — the schedule and this one —
- * so DataBar (which describes "the" loaded file) can't serve both. This strip
- * sits under it and owns the second file on its own terms: its own range, its
- * own replace, its own clear.
+ * The report is read by two sections — Drawings lists it, and the planning board
+ * marks the pieces it names — so its import controls live beside the parser that
+ * understands it, and both sections mount the same ones. The listing of what is
+ * loaded is the shared strip (components/SourceStrip.jsx).
  */
 import React, { useCallback, useRef, useState } from "react";
 import { Badge } from "../../../components/ui.jsx";
@@ -35,6 +35,26 @@ function useTicketImport(onSource) {
   );
 
   return { ingest, error, setError, busy };
+}
+
+/**
+ * Add / Replace button for the ticket report, for strips that only need the
+ * verb. The full drop target below is for the empty state.
+ */
+export function TicketImportButton({ onSource, label = "Add", ghost }) {
+  const { ingest, error, setError, busy } = useTicketImport(onSource);
+  const inputRef = useRef(null);
+  return (
+    <>
+      <button className={ghost ? "btn ghost" : "btn"} disabled={busy}
+              onClick={() => inputRef.current?.click()}>
+        {busy ? "Reading…" : label}
+      </button>
+      <input ref={inputRef} type="file" accept={ACCEPT} hidden
+             onChange={(e) => { ingest(e.target.files[0]); e.target.value = ""; }} />
+      {error && <div style={{ flexBasis: "100%" }}><ErrorBox message={error} onDismiss={() => setError("")} /></div>}
+    </>
+  );
 }
 
 /** Drop target — full-size in the Tickets tab when nothing is loaded. */
@@ -82,59 +102,6 @@ export function TicketDrop({ onSource }) {
         Parsed in your browser and cached in this browser only. Nothing is uploaded anywhere.
       </p>
     </div>
-  );
-}
-
-/** Compact strip shown once a ticket report is loaded. */
-export default function TicketBar({ source, coverage, onSource, onClear, persistWarning }) {
-  const { ingest, error, setError, busy } = useTicketImport(onSource);
-  const inputRef = useRef(null);
-
-  return (
-    <>
-      <div className="srclist">
-        <div className="srcrow">
-          <span className="srcplant">Missing tickets</span>
-          <Badge tone={source.rows.length ? "amber" : "blue"} title="Pieces with no ticket drawing">
-            {count(source.rows.length)} piece{source.rows.length === 1 ? "" : "s"}
-          </Badge>
-          <span className="muted">
-            {source.range.min
-              ? `bed dates ${source.range.min} → ${source.range.max}`
-              : "no bed dates"}
-            {" · "}
-            {count(source.jobs.length)} job{source.jobs.length === 1 ? "" : "s"}
-          </span>
-          <span className="muted" title={source.fileName}
-                style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {source.fileName}
-          </span>
-          <span style={{ display: "flex", gap: 6 }}>
-            <button className="btn ghost" disabled={busy} onClick={() => inputRef.current?.click()}>
-              {busy ? "Reading…" : "Replace"}
-            </button>
-            <button className="btn ghost" onClick={onClear} title="Remove the ticket report">Remove</button>
-          </span>
-          <input ref={inputRef} type="file" accept={ACCEPT} hidden
-                 onChange={(e) => { ingest(e.target.files[0]); e.target.value = ""; }} />
-        </div>
-      </div>
-
-      {error && <ErrorBox message={error} onDismiss={() => setError("")} />}
-      {persistWarning && <div className="notice amber">{persistWarning}</div>}
-      {coverage && <CoverageNotice coverage={coverage} />}
-
-      {source.warnings.length > 0 && (
-        <details style={{ marginBottom: 12, fontSize: 11 }}>
-          <summary className="muted" style={{ cursor: "pointer" }}>
-            {source.warnings.length} import note(s)
-          </summary>
-          <ul style={{ margin: "6px 0 0 18px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-            {source.warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
-        </details>
-      )}
-    </>
   );
 }
 

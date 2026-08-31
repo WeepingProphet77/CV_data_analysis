@@ -8,10 +8,10 @@ commit that changes the code.
 
 ## 0. Start here
 
-**Read §1 (constraints), §2 (layout) and §7 (testing) before changing anything.**
-Then read the section for the module you are touching: §11 production,
-§12 employee time, §13 job cost. §3 covers adding a tab or a whole module,
-§9 the code conventions, §6 styling.
+**Read §1 (constraints), §2 (layout), §15 (the shell) and §7 (testing) before
+changing anything.** Then read the section for the part you are touching:
+§11 production and drawings, §12 time, §13 cost. §3 covers adding a tab, a
+section or a new export; §9 the code conventions; §6 styling.
 
 ### The working cycle
 
@@ -40,7 +40,8 @@ Every change in this repo has gone through the same loop. Follow it:
 |---|---|
 | Live site | https://weepingprophet77.github.io/CV_data_analysis/ |
 | Repo | github.com/WeepingProphet77/CV_data_analysis (public) |
-| Modules | **Employee Time** built · **Production** built (schedule + missing tickets + schedule movement) · **Job Cost** built · **Schedule** placeholder |
+| Sections | **Home** · **Projects** · **Production** · **Drawings** · **Cost** · **Time**, plus **Sources** and the **job page**, which are addressed but not in the nav (§15) |
+| Plan vs actual | not built — the export's columns are still a guess. Its scope lives on Home, ready to return as a Production tab (§15) |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
 | Tests | five suites, all passing — `npm test` |
 | Real data | `ScheduledProdRptDtl.xls`, `MissingPieceMarkTicket.xlsx` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
@@ -97,6 +98,25 @@ shell may not pick that up, so prefix commands with
 - **A total row shows variance.** Every table that has the column totals it.
 - **Don't trust a doc edit that wasn't asserted.** Scripted edits to this file
   have silently matched nothing more than once; check the result.
+- **Sections are named after questions, not exports.** "Job Cost" and "Employee
+  Time" were file names, and a nav of file names only made sense to whoever
+  pulls the reports. Don't add a section named after the file that feeds it
+  (§15).
+- **`modules/sections.js` is plain ESM; `modules/registry.js` attaches the
+  components.** The split is what lets the routing rules be tested in node,
+  which cannot load `.jsx`. Adding a section means editing both (§15).
+- **Datasets are app-wide** (`src/app/AppData.jsx`), not owned by whichever
+  module got them first. The job page and Home need all of them at once, and
+  the board and the movement report *must* share one `diff` because `byRow` is
+  keyed on the row objects themselves (§11).
+- **Tabs are links, and the whole hash is parsed.** `#/production/board`,
+  `#/job/43134/cost`. Don't reintroduce tab state in a section (§15).
+- **Piece detail is deliberately *not* routed.** There is no stable piece id in
+  the export (§11), so there is nothing to put in a URL. Job, person and
+  timesheet-job drill-downs are routed; the piece and day panels are not.
+- **Time is outside My Projects, on purpose.** Membership is keyed on the job
+  number and that export's job field is unprofiled free text; scoping on a
+  guess would hide rows silently (§12, §14).
 
 ---
 
@@ -109,17 +129,21 @@ system's own reporting doesn't give them.
 **Two source systems feed it, and they are not the same product:**
 
 - **Concrete Vision** — the ERP the company runs on: employee time, production,
-  scheduling. Exports are flat tables, usually `.csv`, sometimes `.xlsx`, and go
-  through the schema-driven parser in `core/parse.js` (§4). Modules: Employee
-  Time (§12), Production (§11), Schedule (placeholder).
+  scheduling. Three exports feed the app today — the Scheduled Production
+  Report, the Missing Piece Mark Ticket report and the employee time export.
+  Flat tables go through the schema-driven parser in `core/parse.js` (§4); the
+  ticket report is a grouped report with its own walker (§11).
 - **The cost system** — a separate product that issues the weekly job cost
   reports, one workbook per plant. Its export is a *formatted report*, not a
-  table, and has its own parser (§13). Module: Job Cost.
+  table, and has its own parser (§13).
 
-They describe **the same jobs**, which is what makes the cross-module join
-possible — on the job *number*, never the name (§13). Don't assume a convention
+They describe **the same jobs**, which is why the whole app is organised around
+the job and why every join is on the job *number*, never the name (§13, §15). Don't assume a convention
 from one system holds in the other; the two write job names, plant names and
 quantities differently, and every place they disagree is documented.
+
+Four exports, six sections. The mapping is not one-to-one on purpose: a section
+answers a question and reads whichever sources that question needs (§15).
 
 This started as a single-file React dashboard (`legacy/eng_time_dashboard.html`,
 kept for reference). That file is the origin of the visual language and the
@@ -153,7 +177,7 @@ index.html                     Vite entry
 vite.config.js                 base: '/CV_data_analysis/' in production builds
 src/
   main.jsx                     mounts <App/>
-  App.jsx                      shell: module nav, hash route, error boundary
+  App.jsx                      shell: header, hash route, error boundary (§15)
   styles/theme.css             ALL styling — design tokens + component classes
   core/                        framework-free logic, no JSX, node-importable
     calendar.js                month-grid date math (weeksOf / monthsIn)
@@ -161,7 +185,9 @@ src/
     idb.js                     IndexedDB wrapper (dependency-free)
     parse.js                   schema-driven ingest: coercion, column mapping
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
-    store.js                   useDataset — per-module IndexedDB persistence
+    routing.js                 hash-route parsing — the WHOLE hash (§15)
+    appData.js                 the app-wide data context + useAppData (§15)
+    store.js                   useDataset — one import per key, IndexedDB
     library.js                 useLibrary — multi-source persistence (see §13)
     persisted.js               usePersistedState — one small saved preference,
                                with read-forward migration from older keys
@@ -169,13 +195,17 @@ src/
     palette.js                 the 8 validated categorical series colors + colorMapFor
     format.js                  fmt / pct / compact / money / perSf / dates
     hooks.js                   useSize (ResizeObserver)
+  app/                         the shell layer: may import from core/ AND modules/
+    AppData.jsx                assembles every dataset onto one context (§15)
+    sources.js                 describeSources / sourceSummary / VERBS — pure ESM
   components/                  shared, module-agnostic UI
-    ui.jsx                     Badge, MiniBar, StatCard, Tabs, Panel, sorting
+    ui.jsx                     Badge, MiniBar, StatCard, Panel, sorting
+    Page.jsx                   PageHeader, RouteTabs, NeedsSource (§15)
+    AppHeader.jsx              the shell header: nav, scope switch, data chip
+    SourceStrip.jsx            one row layout and three verbs for every file
     FileImport.jsx             ImportPrompt (empty state) + ImportButton
-    DataBar.jsx                loaded-file strip: source, replace, clear
     Filters.jsx                FilterBar — date window + dimension selects
     MyProjects.jsx             the star, the All / My Projects switch (§14)
-    ModulePlaceholder.jsx      stub UI for reserved-but-unbuilt modules
     MonthCalendar.jsx          month grid; cells keyed by ISO date
     charts/
       LineChart.jsx            multi-series time lines, crosshair, table view
@@ -183,16 +213,24 @@ src/
       ColumnChart.jsx          vertical per-day columns
       scale.js                 niceTicks / sampleTicks / linear
   modules/
-    registry.js                THE list of modules — nav and router read this
-    employee-time/             built  — timesheet analysis
-    production/                built  — scheduled pours + missing tickets (§11)
+    sections.js                THE section list — plain ESM, node-importable
+    registry.js                the same list with each Component attached
+    home/                      the front door: what this is, what is loaded (§15)
+    sources/                   every file, one vocabulary, one page (§15)
+    job/                       ONE JOB across every source (§15)
+      assemble.js              the gather — pure ESM, node-importable
+    projects/                  the unified job list
+      rows.js                  the cost + schedule + drawings merge — pure ESM
+    production/                the schedule (§11)
       board.js                 planning-board column math (plain ESM)
       metrics.js               the pieces/SF/CY/LF measure list
       ticketParse.js           the Missing Piece Mark Ticket walker — pure ESM
       ticketFile.js            File -> ticket source; owns its lazy SheetJS import
       tickets.js               the join to the schedule, and coverage (plain ESM)
       movement.js              upload-to-upload schedule diff (plain ESM)
-    job-cost/                  built  — weekly job cost by plant (see §13)
+      views/TicketImport.jsx   ticket import controls + the coverage notice
+    drawings/                  the missing-ticket queue (§11)
+    job-cost/                  weekly job cost by plant (see §13)
       parse.js                 the report walker — pure ESM, node-importable
       importFile.js            File -> source; owns the lazy SheetJS import
       schema.js                field catalog for the detail view (NOT a
@@ -203,11 +241,12 @@ src/
       engineering.js           the D&E roll-up: budget, hours, design progress
       jobMetrics.js            deriveJob — the fields every view expects
       useJobCost.js            derived data + filter state
-    schedule/                  placeholder
+    employee-time/             timesheet analysis, routed at #/time (§12)
 scripts/
   make-sample.mjs              generates the synthetic employee-time CSV
   make-production-sample.mjs   generates the synthetic production CSV
-  smoke-test.mjs               employee-time + core data-layer checks
+  smoke-test.mjs               employee-time + core data layer + ROUTING,
+                               the project merge and the job gather (§15)
   production-test.mjs          production schema, board columns, calendar grid,
                                ticket walk + reconciliation + the schedule join
   production-ticket-sample.mjs synthetic missing-ticket report, built in memory
@@ -219,13 +258,21 @@ scripts/
   pages-deploy.workflow.yml    the Actions workflow, parked until scope (see §8)
 samples/*.sample.csv               synthetic, safe to commit
 legacy/eng_time_dashboard.html     the original single-file tool; reference only
+docs/interface-proposal.md         the IA rework this structure came from
 ```
 
 ### The layering rule
 
-`core/` never imports from `components/` or `modules/`. `components/` never
-imports from `modules/`. A module may import from both. Anything a second module
-would want belongs in `core/` or `components/`, not copied.
+`core/` never imports from `components/`, `app/` or `modules/`. `components/`
+never imports from `modules/`. A module may import from `core/` and
+`components/`. `app/` is the shell layer and is the **only** place allowed to
+import from modules — it is where the datasets are assembled, because that job
+inherently crosses every module (§15). Anything a second module would want
+belongs in `core/` or `components/`, not copied.
+
+The one thing that would be a cycle is avoided deliberately: the data *context*
+lives in `core/appData.js` and the *provider* in `app/AppData.jsx`, so a module
+importing `useAppData` never imports from `app/`.
 
 `core/` files are plain ESM with no JSX and no React — except the four that are
 hooks by nature: `store.js`, `library.js`, `persisted.js` and `hooks.js`. That is
@@ -238,69 +285,72 @@ as `.jsx`.
 
 ---
 
-## 3. How a module works
+## 3. How a section works
 
-A module is self-contained: it owns its schema, its dataset, its filters and its
-views. `src/modules/registry.js` is the only place it is declared.
+A section owns its filters and its views. `src/modules/sections.js` declares it;
+`src/modules/registry.js` attaches its component. It does **not** own its data —
+the datasets are app-wide (§15).
 
 ```
 modules/<id>/
-  index.jsx          entry component — owns dataset, filters, tabs, drill-down
-  schema.js          field definitions the parser maps the export onto
+  index.jsx          entry component — takes { tab, params, route }, renders views
   use<X>Filters.js   filter state and the derived filtered rows
   views/*.jsx        one file per tab or drill-down screen
   *.js               any pure helper the views share (production has board.js
-                     for column math and metrics.js for its measure list).
+                     for column math and metrics.js for its measure list;
+                     projects has rows.js; job has assemble.js).
                      Keep these as plain ESM — the test scripts import them
                      directly in node, which cannot load .jsx.
 ```
 
-### Adding a module
+A section is handed its `tab` by the router and must not hold tab state of its
+own. Tabs are links (`components/Page.jsx` → `RouteTabs`), so every one is an
+address (§15).
 
-1. Create `src/modules/<id>/schema.js`. Each field is
-   `{ key, label, type: 'date'|'number'|'string', required, aliases: [] }`.
-   Add `derive(row, raw)` for computed fields and `isEmptyRow(row)` to drop
-   rows carrying no information.
-2. Write `index.jsx` following `employee-time/index.jsx`: call
-   `useDataset('<id>')`, show `<ImportPrompt>` when `rows.length === 0`,
-   `<DataBar>` + `<FilterBar>` + views when loaded. Return `null` while
-   `!data.ready` so saved data doesn't flash the empty state.
-3. Add views under `views/`.
-4. Register it in `registry.js` with `status: 'ready'`.
-5. Add render cases to `scripts/render-test.jsx`, including empty and
-   single-row datasets.
+### Adding a section
 
-A module that receives **several files that must coexist** — as the job cost
-reports do, one per plant — uses `useLibrary` from `core/library.js` instead of
-`useDataset`, and owns its own strip in place of `<DataBar>`. See §13 before
-reaching for it; a module fed by a single export should stay on `useDataset`.
+1. Add an entry to `src/modules/sections.js`: `id`, `label`, `blurb`, `needs`
+   (which sources it is useless without), and its `tabs`. **No JSX in that
+   file** — it is imported by the test scripts in node.
+2. Add the component to the `COMPONENTS` map in `registry.js`.
+3. Write `index.jsx` taking `{ tab }`, reading data with `useAppData()`, and
+   rendering `<PageHeader>` + `<RouteTabs>` + views. Show `<NeedsSource>` rather
+   than an empty dashboard when its file is not loaded.
+4. Add a task entry to `modules/home/index.jsx` if it is something a person
+   would come to the app to do.
+5. Add render cases to `scripts/render-test.jsx` — including the empty state,
+   using the `withApp(..., appEmpty)` fixture.
 
-A module fed by **two different reports** — as production is, with the schedule
-and the missing-ticket report — keeps them as **two `useDataset` records** under
-distinct ids (`production`, `production-tickets`). A module that needs to
-compare an import against the one it replaced keeps a third: capture the
-outgoing rows in the `onLoaded` handler, before `load` replaces them, and clear
-it whenever the data it describes is cleared (`production-baseline`, §11). They refresh independently,
-so one must never replace the other, and the second gets its own strip under
-`<DataBar>`. Before joining them, work out what they actually agree on: two
-reports from the same database still get pulled over different ranges, and
-saying so in the UI is part of the feature, not a nicety (§11).
+### Adding a new export
 
-### Adding a tab or measure to a module that already exists
+A new file is a new **source**, not necessarily a new section:
 
-Most work is this, not a new module. The shape that has held up:
+1. Parse it. A flat table goes through `core/parse.js` with a schema; anything
+   with merged cells, a header block or one sheet per entity needs its own
+   walker (§4, §13).
+2. Add the record to `src/app/AppData.jsx` and a descriptor to
+   `src/app/sources.js`. The descriptor is what makes it appear on Home, on the
+   Sources page and in the header chip — including any `warn` sentence, which is
+   how a warning reaches the whole app instead of one tab.
+3. Add its import controls to `modules/sources/index.jsx`.
+4. Decide which section reads it. Two reports that answer different questions
+   get two sections, as the schedule and the ticket report do (§11).
+
+### Adding a tab or measure to a section that already exists
+
+Most work is this. The shape that has held up:
 
 1. **Look at the real export before designing.** Profile it in a throwaway
    script; do not reason from the schema. Every measure in §13 that turned out
    wrong on the first attempt was wrong because it was inferred rather than
    checked, and every one was caught by printing actual cells.
-2. **Put the arithmetic in a plain `.js` file in the module** — `engineering.js`,
-   `squarefeet.js`, `board.js` are the models. It must be importable by node so
-   the arithmetic can be tested without a browser or a build.
-3. **Add the tab to the module's `index.jsx`** `Tabs` array and render it
-   alongside the others. Filters are shared; a tab that needs its own control
-   owns it (the production board owns its plant picker, the job cost tab owns
-   the My Projects switch via `FilterBar`'s `leading` slot).
+2. **Put the arithmetic in a plain `.js` file in the section** —
+   `engineering.js`, `squarefeet.js`, `board.js`, `projects/rows.js` and
+   `job/assemble.js` are the models. It must be importable by node so the
+   arithmetic can be tested without a browser or a build.
+3. **Add the tab to `sections.js`** and render it in the section's `index.jsx`.
+   Filters are shared; a tab that needs its own control owns it (the production
+   board owns its plant picker, Drawings owns its bed-date buckets).
 4. **Test the arithmetic, not the markup.** Assert that breakdowns sum back to
    the same total, that no figure is `NaN`/`Infinity`, and that a rate divides
    by what you think it does — see the `$/SF` invariant in §13, which is the
@@ -310,15 +360,6 @@ Most work is this, not a new module. The shape that has held up:
 6. **Say what is derived.** If a figure is not a column in the export, label it
    as derived in the UI. `Est OH & Profit` is stated; `variance to budget` is
    not, and the difference matters to whoever reads it.
-
-### Placeholders
-
-`schedule` still renders `<ModulePlaceholder>`, which states its intended scope
-and the export columns it is expected to consume. **That column list is a
-guess** — confirm it against a real Concrete Vision export before building it
-out.
-
----
 
 ## 4. Data ingest
 
@@ -355,8 +396,12 @@ out.
 
 ### Persistence
 
-`useDataset(moduleId)` keeps the last import in **IndexedDB** under
-`cv.analysis.<moduleId>.v1`, via the dependency-free wrapper in `core/idb.js`.
+`useDataset(key)` keeps the last import in **IndexedDB** under
+`cv.analysis.<key>.v1`, via the dependency-free wrapper in `core/idb.js`. The
+keys are unchanged from when each module owned its own record — `production`,
+`production-tickets`, `production-baseline`, `employee-time`, and the job cost
+library — but every one of them is now created once in `src/app/AppData.jsx`
+and read from the context (§15).
 
 **Do not move this back to `localStorage`.** That was the original choice and it
 was wrong: localStorage caps at ~5MB per origin and holds strings only, so every
@@ -478,6 +523,18 @@ headers, and the aggregation invariants that matter: **a rollup conserves the
 total**, **"Other" conserves the remainder**, **a cumulative series is
 monotonically non-decreasing and ends at the group total**.
 
+It also covers the shell (§15), which is why `modules/sections.js` is plain ESM:
+
+- **Routing** — a stale bookmark falls back to something real rather than a
+  blank page; the job page's id precedes its tab (`#/job/43134/cost`); segments
+  a section takes for itself survive encoding; every section's bare route
+  resolves to its own first tab.
+- **The project merge** — one row per job number, a cost-only and a
+  schedule-only job both present, and **a rate with no denominator is `null`,
+  never `0`**.
+- **The job gather** — each source found separately, and the timesheet match
+  reported as a token match that is never `confident`.
+
 `test:storage` runs the real IndexedDB code path against `fake-indexeddb` and
 asserts that a dataset far larger than the localStorage cap saves and reloads
 intact. Keep the oversized case — it is the regression guard for the bug that
@@ -497,10 +554,14 @@ The render suite has still caught real browser bugs — it found `Schedule`
 passing `month === null` to the calendar on first render, which threw in Chrome
 too. Treat a render failure as a real defect until proven otherwise.
 
-Where new tests go: `core/` logic → `smoke-test.mjs`; production schema, board,
-calendar, missing-ticket or schedule-movement logic → `production-test.mjs`; job cost parsing, cost-code
+Where new tests go: `core/` logic, routing, the project merge or the job gather
+→ `smoke-test.mjs`; production schema, board, calendar, missing-ticket or
+schedule-movement logic → `production-test.mjs`; job cost parsing, cost-code
 classification or plant aliasing → `job-cost-test.mjs`; a new view → a case in
-`render-test.jsx`, including its empty and single-row states. The harnesses are
+`render-test.jsx`, including its empty and single-row states. A section that
+reads `useAppData` gets its case wrapped in the `withApp(...)` fixture there,
+with a second case against `appEmpty` — "no file loaded" is a state each of
+those pages is supposed to *explain*, so rendering blank is a failure. The harnesses are
 hand-rolled on purpose — no test framework dependency.
 
 ---
@@ -595,7 +656,9 @@ company, the second can be picked up now.
 - [ ] **Two ticket rows have bed dates in 2023** and still have no drawing.
       Genuinely overdue, cancelled pieces still on the report, or a data
       artifact? Surfaced as their own urgency bucket until someone says (§11).
-- [ ] **Is there any stable per-piece identifier in Concrete Vision?** The
+- [ ] **Is there any stable per-piece identifier in Concrete Vision?** It would
+      also make piece detail addressable — it is the one drill-down that is not
+      routed, because there is nothing stable to put in the URL (§15). The
       schedule export has none (§11), which forces the movement comparison to
       align repeated marks by date. If `Cast No.` is in fact a stable database
       id that merely repeats within one export for another reason, the matcher
@@ -611,8 +674,9 @@ company, the second can be picked up now.
       never scheduled, titles suffixed `(EX)` — erection contracts, most likely.
       Kept as distinct jobs; if they should roll into their base job that is a
       change to the join in §13.
-- [ ] Confirm the column names in Concrete Vision's **schedule** export. The
-      list in that placeholder is still a guess.
+- [ ] Confirm the column names in Concrete Vision's **plan vs actual**
+      (scheduling) export. The list on Home is still a guess. Once confirmed it
+      returns as a Production tab, not as a section of its own (§15).
 - [ ] What does the `(RL)` suffix on a piece mark mean, and what are the 51
       zero-quantity rows that still carry a mark? Passed through untouched.
 - [ ] Does the employee time export carry a pay-rate or cost column? Decide
@@ -624,6 +688,13 @@ company, the second can be picked up now.
 
 ### Could be built now
 
+- [ ] **Employee Time ↔ job cost join.** The cost↔production join works on job
+      number (§13). Employee Time's `job` field has never been profiled against
+      a real export (§12), so confirm its format before extending the same join.
+      This is the single highest-value open item now: it unblocks Time joining
+      My Projects (§14) and turns the job page's Hours block from a labelled
+      guess into a real figure (§15).
+
 - [ ] **Weekly trend for job cost.** Each report is a snapshot with no date
       axis; `Current Mo Act` is the only period figure and it is month-to-date.
       Keeping successive imports would give real burn curves — the library
@@ -633,9 +704,9 @@ company, the second can be picked up now.
 - [ ] **CSV / PNG export from the dashboard.** Most useful on the job cost
       tabs; a filtered cost-code table is the thing most likely to be wanted in
       a spreadsheet.
-- [ ] **Employee Time ↔ job cost join.** The cost↔production join works on job
-      number (§13). Employee Time's `job` field has never been profiled against
-      a real export (§12), so confirm its format before extending the same join.
+- [x] **Section names, navigation, routing and the front door** — reworked
+      2026-08-31 (§15). `docs/interface-proposal.md` has the diagnosis and the
+      mapping of every old surface to its new home.
 - [ ] **Merging exports that cover different date spans.** Loading a second one
       currently replaces the dataset. Merging needs a dedupe key — probably
       date + person + job + task. IndexedDB has the headroom.
@@ -729,15 +800,28 @@ One row = **one scheduled piece on one bed on one date at one plant**.
 | `Beds.jsx` | **Beds** | Utilization per bed: days scheduled, pieces, SF, CY, and idle days in the window. |
 | `Jobs.jsx` | **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
 | `Pieces.jsx` | **Pieces** | The searchable, sortable detail table, capped at 300 rows a page. |
-| `Tickets.jsx` + `TicketBar.jsx` | **Tickets** | The Missing Piece Mark Ticket report — see below. |
-| `Movement.jsx` + `BaselineBar.jsx` | **Moved** | What moved since the previous upload — see below. Only offered once a baseline exists. |
+| `Movement.jsx` + `BaselineBar.jsx` | **Schedule Changes** | What moved since the previous upload — see below. Only offered once a baseline exists. |
 
-Filters shared across tabs: date window, plant, job, plus the app-wide
-**My Projects** scope (§14), which narrows the row pool before anything else.
-**Board and Calendar own their own plant picker** (it drives what they render),
-so the shared filter row omits plant on those two tabs rather than showing two
-controls for one thing. Tickets is scoped by job rather than by bed or day, so
-it omits the plant picker and the date window both.
+Two things that used to be tabs here have moved, because they were different
+jobs sharing a tab row (§15):
+
+- **Tickets → the `drawings` section.** The missing-ticket queue is the first
+  thing an engineering manager opens; it was the seventh of eight tabs. Its
+  three tables are now its three tabs (Queue / By Job / By Drafter) and the
+  bed-date urgency buckets are a control above them. `TicketImport.jsx` keeps
+  the import controls and `CoverageNotice` here, beside the parser.
+- **Jobs → the `projects` section**, merged with the job cost table into one
+  row per job number.
+
+What the ticket report still does *here* is mark the board.
+
+Filters shared across tabs: date window, plant, job. The app-wide **My
+Projects** scope (§14) narrows the row pool before any of them, and its switch
+is in the shell header rather than in this filter row (§15). **Board and
+Calendar own their own plant picker** (it drives what they render), so the
+shared filter row omits plant on those two tabs rather than showing two controls
+for one thing. Schedule Changes is scoped by job rather than by bed or day, so
+it omits the date window.
 
 ### Shared components this adds
 
@@ -979,7 +1063,10 @@ movement than was injected.
 
 `diffSchedule(baselineRows, currentRows)` returns `moved` / `added` / `removed`
 / `unchanged`, per-job roll-ups, and **`byRow`, a `Map` keyed by the current row
-object itself**. Within a repeated mark the instances are told apart only by
+object itself**. This is why the diff is computed once in `app/AppData.jsx` and
+shared: the board and the movement report have to be looking at the *same* row
+objects, and two `useMemo`s over the same rows would produce two maps that agree
+on nothing. Within a repeated mark the instances are told apart only by
 their position in the alignment, so any string key would have to encode that
 position and would break the moment two instances shared a date. The board and
 the report both read from the same `rows` array in the same render pass, so
@@ -1008,7 +1095,11 @@ which is how a scheduler reads them. Beds with nothing to show drop out.
 
 #### Visual review status
 
-**Nothing added on 2026-08-31 has been looked at** — the Tickets tab, the
+**The whole interface rework of 2026-08-31 is unreviewed** — the shell header,
+Home, Sources, Projects, the job page, Drawings, and every section's new tab
+row. See §15.
+
+**Nothing added earlier on 2026-08-31 has been looked at either** — the Tickets tab, the
 missing-ticket strip and coverage notices, the board's NO TICKET marker and its
 "only missing" filter, the star column on the production Jobs table, and the
 whole schedule-movement feature (the Moved tab, the "compared against" strip,
@@ -1035,10 +1126,11 @@ empties, never silently omit a field.
 
 ---
 
-## 12. Employee Time module
+## 12. Time section (`modules/employee-time/`, routed at `#/time`)
 
 The first module, and the one the legacy single-file dashboard
-(`legacy/eng_time_dashboard.html`) was rewritten from.
+(`legacy/eng_time_dashboard.html`) was rewritten from. The folder keeps its
+original name; the section is `time`.
 
 **Caveat a new agent should know:** unlike production, this schema was derived
 from the legacy tool's parser, **not** profiled against a real export. The
@@ -1066,8 +1158,20 @@ production, a zero here carries no information.
 | `People.jsx` | People | Sortable, searchable roster — hours, share of total, project count, days charged. |
 | `Projects.jsx` | Projects | Same for jobs — hours, headcount, first/last charge. |
 | `Cumulative.jsx` | Cumulative | The plotting view. Narrow to a person and/or project, then split into series by project, person, labor task, location, department or GL code; cumulative or per-day. |
-| `PersonDetail.jsx` | drill-down | One person: cumulative hours per project, plus their project table. |
-| `ProjectDetail.jsx` | drill-down | One job: total burn, cumulative by person, hours by task, team table. |
+| `PersonDetail.jsx` | drill-down | One person: cumulative hours per project, plus their project table. Routed at `#/time/person/<name>`. |
+| `ProjectDetail.jsx` | drill-down | One job: total burn, cumulative by person, hours by task, team table. Routed at `#/time/job/<name>`. |
+
+The **Projects** tab is labelled **Jobs**, for one word per concept across the
+app (§15) — but it carries a note saying these are job *names* as typed on
+timesheets, not job numbers, and that they do not join to the Projects section.
+
+**This section is deliberately outside the My Projects scope.** Membership is
+keyed on the job number (§14) and this export's `job` field is unprofiled free
+text. Scoping it on a name match would hide rows silently, which is worse than
+not scoping at all. The job page's Hours block has the same problem and says so
+in an amber notice on every job it matches: `assemble.js` sets
+`hours.confident: false` and nothing may set it true until a real export is
+profiled. **That profiling is the one change that unblocks both.**
 
 `useTimeFilters.js` holds the shared date-window / location / department filter
 state, mirroring `useProductionFilters.js`.
@@ -1084,7 +1188,7 @@ state, mirroring `useProductionFilters.js`.
 
 ---
 
-## 13. Job Cost module
+## 13. Cost section (`modules/job-cost/`, routed at `#/cost`)
 
 Built from four real exports profiled 2026-08-26: `<Plant> Job Cost Report -
 Active Jobs.xlsx`, one per plant, in the gitignored `weekly job costs/` folder.
@@ -1179,7 +1283,7 @@ Also identities, and tested: `Net Contract = Original + Change Orders`,
 
 ### Persistence: a library, not a dataset
 
-**This is the module's one structural departure.** `useDataset` holds a single
+**This is the one source that is several files at once.** `useDataset` holds a single
 import and replaces it on upload. Here the reports arrive one per plant, each
 refreshed on its own schedule, so replacing would discard three plants to update
 a fourth. `core/library.js` (`useLibrary`) keeps **one entry per source, keyed
@@ -1187,6 +1291,9 @@ by plant**; re-importing a plant overwrites just that entry.
 
 - The plant comes from the **filename** — the worksheets carry no plant field.
 - The whole library is one IndexedDB value, so an import is atomic.
+- It is created in `app/AppData.jsx` like every other record, because Projects
+  and the job page read it too (§15). It is still `useLibrary`, still one entry
+  per plant — don't "simplify" it back to `useDataset`.
 - `store.js` was generalised into `readRecord`/`writeRecord` so both hooks share
   one storage path with one fallback story. Don't fork it again.
 - Because plants refresh independently, **the library routinely holds more than
@@ -1220,14 +1327,16 @@ cost report loaded.
 
 | File | Tab | What it shows |
 |---|---|---|
-| `SourceLibrary.jsx` | (strip) | One row per loaded plant — as-of date, job count, file, remove. Drop target accepts several workbooks at once. Replaces `DataBar` here, which describes a single file. |
+| `SourceLibrary.jsx` | (import) | The workbook drop target. Accepts several files at once; each overwrites just its own plant. The *listing* of what is loaded is the shared strip now (§15). |
 | `Portfolio.jsx` | **Portfolio** | Stat tiles, margin-at-completion bands, jobs under 10% margin, cost by section and category, per-plant table. |
-| `Jobs.jsx` | **Jobs** | The sortable job table — every column sorts, which is the main way in. |
 | `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
-| `ProductionLink.jsx` | **vs Production** | The join above. |
-| `Engineering.jsx` | **Drafting & Eng** | The role dashboard — see below. |
-| `MyProjects.jsx` | (controls) | The star toggle and the All / My Projects switch. |
-| `JobDetail.jsx` | drill-down | The whole report for one job, reproduced. |
+| `Engineering.jsx` | **Drafting & Engineering** | The role dashboard — see below. |
+| `JobDetail.jsx` | (job page) | The whole report for one job, reproduced. Now a tab of the job page: `#/job/<jobNo>/cost` (§15). |
+| `ProductionLink.jsx` | (Projects) | The join above. Moved to `#/projects/vs-schedule` — it is about the job population, not about money. |
+
+Two tabs left this section for `projects` (§15): the **Jobs** table, merged with
+the production job table into one row per job number, and **vs Production**,
+renamed **Cost vs Schedule**. Nothing in either was dropped.
 
 `JobDetail` follows the §11 rule: every field is listed whether or not it has a
 value, subtotals are **recomputed from the lines on screen** rather than read
@@ -1250,8 +1359,9 @@ from the sheet, and the "show fields that are empty" toggle defaults to **on**.
 ### My Projects
 
 The starred-projects selection is **app-wide** and lives in `core/`, not here —
-see §14. Job cost mounts it via `useJobCostFilters(data, mine)`, which narrows
-the job pool itself rather than each view applying it.
+see §14. This section applies it via `useJobCostFilters(data, mine)`, which
+narrows the job pool itself rather than each view applying it. The *switch* is
+in the shell header (§15).
 
 ### Cost per square foot
 
@@ -1393,7 +1503,8 @@ totals are summed once in the `bySection` memo rather than per cell.
 
 The owner reviewed the module on 2026-08-27 and approved the look. Everything
 added after that point — the budget/forecast columns, `$/SF` throughout, the
-hours section — has **not** been looked at, and there is no browser automation
+hours section, and the whole 2026-08-31 interface rework (§15) — has **not**
+been looked at, and there is no browser automation
 here to check it (§7). The tables that grew most columns are Jobs, the plant
 table and the D&E project table; those are where crowding would show first.
 
@@ -1403,12 +1514,19 @@ Keep saying plainly which changes were and were not visually verified.
 
 ## 14. My Projects
 
-A starred subset of jobs, persisted, scoping **every module** — job cost,
-production and the missing-ticket report all read the same list. It started as a
-job-cost feature and moved into `core/myProjects.js` on 2026-08-31, because the
-same handful of projects is what an engineering manager wants to see in all
-three: starring a job in one place and having to star it again in the next is
-the thing this avoids.
+A starred subset of jobs, persisted, scoping Projects, Production, Drawings and
+Cost — all four read the same list. It started as a job-cost feature and moved
+into `core/myProjects.js` on 2026-08-31, because the same handful of projects is
+what an engineering manager wants to see in all of them: starring a job in one
+place and having to star it again in the next is the thing this avoids.
+
+**Time is the one section outside it, deliberately** — its job field is
+unprofiled free text and cannot be keyed on the job number (§12). That is stated
+in the section rather than worked around.
+
+**The switch lives in the shell header**, not in a section's filter row. It is
+app-wide state; mounting it inside two sections made it look like a per-section
+filter and made it vanish on the third (§15).
 
 - **Membership is keyed on the job number**, not a plant-scoped key. The number
   is the project's identity in every system here — it is what the production
@@ -1438,11 +1556,159 @@ the thing this avoids.
 - `scope: "mine"` with an empty list is a dead end, so `active` is false until
   something is starred, and a module shows `NoProjectsYet` rather than a blank
   dashboard. `clearMembers` returns the scope to All for the same reason.
-- **Every module must gate its first render on `mine.ready`** alongside its own
-  dataset, or a saved "My Projects" choice flashes as "All".
+- **The shell gates the first render on every record resolving**, `mine.ready`
+  included, so a saved "My Projects" choice can never flash as "All". A section
+  no longer has to remember to do this itself (§15).
 
 The star (`StarButton`) and the All / My Projects switch (`ScopeToggle`) live in
-`components/MyProjects.jsx`. A module that lists jobs should mount the star in
-that table — job cost's Jobs table and job detail, production's Jobs table, and
-the ticket report's by-job table all do — so the list can be curated from
-wherever you happen to be looking.
+`components/MyProjects.jsx`. A section that lists jobs should mount the star in
+that table — the Projects table, the job page, the cost report's job detail and
+the Drawings by-job table all do — so the list can be curated from wherever you
+happen to be looking. `ScopeToggle` is mounted once, by `AppHeader`.
+
+---
+
+## 15. The shell: sections, routing and sources
+
+Reworked 2026-08-31. The diagnosis, and a line-by-line map of every old surface
+to its new home, is in `docs/interface-proposal.md`. **No analysis or control
+was removed**; three things were added and the rest was regrouped.
+
+### What was wrong
+
+The app grew a module at a time and the navigation recorded that history rather
+than what the app is for. Concretely:
+
+- The nav was four **file names**, meaningful only to whoever pulls the reports,
+  and they did not even denote the same kind of thing: one export, three
+  records, a four-file library, and a placeholder.
+- There was **no front door** — the default route was a module, so a first-time
+  viewer landed inside one subsection facing a dropzone, with no statement of
+  what the app was or which files it wanted.
+- **Five import strips with five vocabularies** for three actions.
+- The **job** was the spine of the app and had no home: four screens, one
+  one-way link that forgot the job on arrival, and two names for one entity
+  ("Project" in Employee Time, "Job" everywhere else).
+- **Switching module remounted everything**, and only the first hash segment was
+  read, so no tab or drill-down was addressable.
+- **My Projects was app-wide in code only** — mounted in two modules' filter
+  rows, absent from the third.
+- The most dangerous warnings in the app (a ticket report that misses the
+  schedule; plants at mixed cut-off dates) were announced **only to someone
+  already standing on the tab that computed them**.
+
+### The organising idea
+
+> The application is about **jobs**. Everything else — a timesheet, a pour
+> schedule, a cost workbook, a ticket report — is a source of evidence about
+> jobs.
+
+So sections are named after the question they answer, sources are one thing with
+one vocabulary, and the job has a page.
+
+### Sections
+
+| Route | Section | Tabs |
+|---|---|---|
+| `#/` | **Home** | — |
+| `#/projects` | **Projects** | All Jobs · Cost vs Schedule |
+| `#/production` | **Production** | Board · Calendar · Overview · Beds · Pieces · Schedule Changes |
+| `#/drawings` | **Drawings** | Queue · By Job · By Drafter |
+| `#/cost` | **Cost** | Portfolio · Cost Codes · Drafting & Engineering |
+| `#/time` | **Time** | Overview · People · Jobs · Cumulative |
+| `#/sources` | Sources | — (reached from the header chip and Home, not the nav) |
+| `#/job/<jobNo>` | Job page | Summary · Full Cost Report |
+
+`modules/sections.js` is the declaration and is **plain ESM** so the routing
+rules are testable in node; `modules/registry.js` attaches the components.
+Adding a section means editing both.
+
+### Routing
+
+`core/routing.js` parses the **whole** hash. `parseRoute` takes `isSection`,
+`tabsFor` and `paramsFor` as injected functions, so it knows nothing about the
+registry and can be driven by a fixture in the tests.
+
+- An unknown section or tab **falls back** rather than rendering blank — a stale
+  bookmark has to land somewhere real.
+- `paramsFor` is 0 for every section except the job page, which is
+  `#/job/<jobNo>/<tab>`: the job is what the page is *about*, so it precedes the
+  tab, exactly as it reads aloud.
+- Tabs are `<a href>`, not buttons. A section is **handed** its tab and must not
+  keep tab state.
+- The error boundary is keyed on the **section**, not the route, so switching
+  tab does not remount the view and throw away its scroll position.
+- **Routed drill-downs:** the job page, `#/time/person/<name>`,
+  `#/time/job/<name>`. **Not routed:** piece detail and day detail. That is not
+  an oversight — the schedule export has no stable piece id (§11), so there is
+  nothing to put in a URL. Don't invent one from an array index.
+
+### Data
+
+Every dataset is created once in `src/app/AppData.jsx` and read through
+`useAppData()` from `core/appData.js`. The keys and the hooks are unchanged.
+
+This is not tidiness. Job cost was already reaching across the module boundary
+with its own `useDataset("production")`, which was the first sign the boundary
+was wrong; the job page needs all four sources at once; and the board and the
+movement report **must** share one `diff`, because `byRow` is keyed on the row
+objects themselves (§11). Two memos over the same rows would key two maps that
+agree on nothing.
+
+`useAppData` **throws** without a provider, on purpose: a section rendered
+outside the shell would otherwise show empty dashboards that look like "no data
+loaded" rather than the wiring fault they are.
+
+The shell holds a placeholder until **every** record resolves. Sections no
+longer each remember to gate on `ready`.
+
+### Sources: one vocabulary
+
+`app/sources.js` describes every file the app can hold — pure ESM, so its
+warning rules are testable. Three verbs, used verbatim everywhere:
+**Add** / **Replace** / **Remove** (plus **Remove all**). Removing anything that
+took an upload asks once. `components/SourceStrip.jsx` is the one row layout.
+
+A descriptor's `warn` is a **sentence**, not a flag, because whatever raises the
+header chip has to be able to say why in the same breath. This is how the
+coverage trap and the mixed-cut-off trap reach Home and the header instead of
+being trapped in one tab. **When you add a source, its `warn` is the part that
+matters most.**
+
+### The job page
+
+`modules/job/assemble.js` gathers one job from every source; `index.jsx` is
+presentation only. Rules it holds to:
+
+- Keyed on the job **number**, never the name.
+- Each source is its own section, with its own as-of stated. The figures are
+  **never summed across sources**: cost is cumulative to date, the schedule is a
+  forward month, the ticket report is a snapshot.
+- "Not loaded" and "loaded but says nothing about this job" are **visibly
+  different**. Neither renders zeros.
+- The Hours block is a **labelled guess** and says so in amber every time it
+  matches (§12). `hours.confident` stays `false` until the export is profiled.
+
+### Projects: the merged table
+
+`modules/projects/rows.js` merges the cost job list and the schedule job list
+into one row per job number. A job present in only one source leaves the other
+side **dashed, not zeroed** — a dash says "this source doesn't mention it", a
+zero would say "it has none". Tested.
+
+### Vocabulary
+
+One word per concept. Job (not Project) for the entity; Overview (not Charts or
+Portfolio) for that kind of screen; `Job No` for the number and `Job` for the
+name; `Budget / SF` spacing on every rate; `Variance to Forecast` spelled out.
+Keep this list true when adding a column.
+
+### Visual review status
+
+**None of this has been looked at.** There is no browser automation here (§7).
+The five suites pass, including against the real exports, but they prove that
+views mount and that arithmetic holds — not that anything looks right. The
+places most likely to need adjusting, in order: the shell header (a new
+persistent row on every page), the job page (four sources on one screen), and
+the Projects table (cost and schedule columns in one row, many of them dashed).
+Ask the owner to look at `npm run dev`.

@@ -1,223 +1,139 @@
 /**
- * Production — analysis of Concrete Vision's Scheduled Production Report.
+ * Production — the schedule: what is being poured, on which bed, on which day.
  *
  * The report is forward-looking: these are pours that are *scheduled*. The UI
  * says "scheduled" throughout and never claims anything was produced.
  *
- * The module holds **three** records, kept separate because they are written at
- * different times and must not overwrite one another:
+ * Two things that used to live here have moved out, because they were different
+ * jobs sharing a tab row: the missing-ticket queue is now its own **Drawings**
+ * section, and the per-job roll-up is part of **Projects**. What the ticket
+ * report still does here is mark the board — a scheduled piece with no drawing
+ * gets flagged where the scheduler is already looking.
  *
- *   production           the schedule — every scheduled piece, bed and day
- *   production-tickets   the Missing Piece Mark Ticket report (ticketParse.js)
- *   production-baseline  a compact copy of the *previous* schedule, captured at
- *                        the moment a new one replaces it, so the two can be
- *                        compared (movement.js). Cleared with the schedule: a
- *                        baseline outliving the data it described would compare
- *                        a fresh import against a file nobody remembers loading.
- *
- * They are joined on job number + piece mark, never on bed date — see
- * tickets.js for why. Whether they actually overlap is computed rather than
- * assumed, and said out loud: an unflagged board means "every piece is drawn"
- * only when the ticket report covers the same dates.
+ * The datasets themselves are held app-wide (src/app/AppData.jsx). They are the
+ * same three records under the same keys; they are just no longer private to
+ * this module, which is what lets the job page and Home speak about them too.
  */
 import React, { useMemo, useState } from "react";
-import { useDataset } from "../../core/store.js";
-import { useMyProjects, SCOPE_ALL } from "../../core/myProjects.js";
+import { useAppData } from "../../core/appData.js";
 import { sumBy } from "../../core/aggregate.js";
-import { Tabs } from "../../components/ui.jsx";
-import { ImportPrompt } from "../../components/FileImport.jsx";
-import { DataBar } from "../../components/DataBar.jsx";
+import { PageHeader, RouteTabs } from "../../components/Page.jsx";
+import { ImportButton, ImportPrompt } from "../../components/FileImport.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
-import { ScopeToggle, NoProjectsYet } from "../../components/MyProjects.jsx";
+import { SourceStrip, SourceRow, RemoveButton } from "../../components/SourceStrip.jsx";
+import { NoProjectsYet } from "../../components/MyProjects.jsx";
+import { SCOPE_ALL } from "../../core/myProjects.js";
+import { VERBS } from "../../app/sources.js";
+import { hrefFor, go } from "../../core/routing.js";
+import { count } from "../../core/format.js";
+import { tabsFor } from "../sections.js";
 import schema from "./schema.js";
 import { useProductionFilters } from "./useProductionFilters.js";
-import { ticketIndex, ticketCoverage } from "./tickets.js";
-import { snapshotOf, diffSchedule } from "./movement.js";
 import PlanningBoard from "./views/PlanningBoard.jsx";
 import Schedule from "./views/Schedule.jsx";
 import Overview from "./views/Overview.jsx";
 import Beds from "./views/Beds.jsx";
-import Jobs from "./views/Jobs.jsx";
 import Pieces from "./views/Pieces.jsx";
-import Tickets from "./views/Tickets.jsx";
-import TicketBar, { TicketDrop } from "./views/TicketBar.jsx";
 import Movement from "./views/Movement.jsx";
 import BaselineBar from "./views/BaselineBar.jsx";
 
-/** The saved ticket report is one record: the source object the walker returns. */
-const EMPTY_TICKETS = { fileName: "", rows: [], jobs: [], plants: [], range: { min: "", max: "" }, warnings: [] };
-
-export default function ProductionModule() {
-  const data = useDataset("production");
-  const ticketData = useDataset("production-tickets");
-  const baseline = useDataset("production-baseline");
-  const mine = useMyProjects();
-  const f = useProductionFilters(data.rows, mine);
-  const [tab, setTab] = useState("board");
+export default function ProductionModule({ tab }) {
+  const app = useAppData();
+  const mine = app.mine;
+  const f = useProductionFilters(app.schedule.rows, mine);
   const [search, setSearch] = useState("");
-
-  // useDataset persists { rows, meta }; the walker's per-file figures (ranges,
-  // banner counts, import notes) ride along in meta so the strip can show them
-  // without re-reading the workbook.
-  const ticketSource = useMemo(
-    () => (ticketData.rows.length ? { ...EMPTY_TICKETS, ...(ticketData.meta ?? {}), rows: ticketData.rows } : EMPTY_TICKETS),
-    [ticketData.rows, ticketData.meta]
-  );
-
-  /**
-   * The ticket lookup is built over the *whole* report, not the filtered slice:
-   * a piece is missing its drawing regardless of which plant or date window is
-   * on screen, and rebuilding it per filter change would be wasted work.
-   */
-  const tickets = useMemo(() => ticketIndex(ticketSource.rows), [ticketSource.rows]);
-
-  // Coverage is measured against the My Projects pool rather than the date
-  // filter, so narrowing to a week doesn't read as the report having shrunk.
-  const coverage = useMemo(
-    () => ticketCoverage(f.pool, ticketSource.rows),
-    [f.pool, ticketSource.rows]
-  );
-
-  const scheduledJobNos = useMemo(
-    () => new Set(data.rows.map((r) => r.jobNo).filter(Boolean)),
-    [data.rows]
-  );
-
-  /**
-   * What moved since the previous upload. Computed over the *whole* schedule,
-   * not the filtered slice — a piece moved regardless of which week is on
-   * screen, and `byRow` is keyed on the row objects the board also renders.
-   */
-  const diff = useMemo(
-    () => diffSchedule(baseline.rows, data.rows),
-    [baseline.rows, data.rows]
-  );
 
   const counts = useMemo(() => ({
     beds: new Set(f.filtered.map((r) => r.bedKey)).size,
-    jobs: new Set(f.filtered.map((r) => r.job)).size,
     pieces: sumBy(f.filtered, (r) => r.qty),
   }), [f.filtered]);
 
-  // Both must resolve, or a saved My Projects choice flashes as "All".
-  if (!data.ready || !mine.ready || !ticketData.ready || !baseline.ready) return null;
+  const scopedMoved = useMemo(
+    () => app.diff.moved.filter((e) => !mine.active || mine.members.has(e.row.jobNo)),
+    [app.diff.moved, mine.active, mine.members]
+  );
 
-  if (!data.rows.length) {
+  if (!app.schedule.rows.length) {
     return (
       <ImportPrompt
         schema={schema}
         title="Production"
-        blurb="Upload a Concrete Vision Scheduled Production Report to get started."
-        onLoaded={data.load}
+        blurb="Upload a Concrete Vision Scheduled Production Report — a month of scheduled pours, bed by bed."
+        onLoaded={app.schedule.load}
       />
     );
   }
 
-  const loadTickets = (src) => {
-    const { rows, ...meta } = src;
-    ticketData.load(rows, meta);
-  };
-
-  /**
-   * Replacing the schedule: keep what is on screen now as the baseline, then
-   * load the new file. `data.rows` still holds the outgoing export at this
-   * point, which is the whole reason the capture happens here rather than
-   * inside useDataset.
-   */
-  const replaceSchedule = (rows, meta) => {
-    if (data.rows.length) {
-      baseline.load(snapshotOf(data.rows), {
-        fileName: data.meta?.fileName || "",
-        fileDate: data.meta?.fileDate || "",
-        replacedOn: new Date().toISOString().slice(0, 10),
-        rowCount: data.rows.length,
-      });
-    }
-    data.load(rows, meta);
-    setTab("movement");   // the comparison is the reason they uploaded again
-    setSearch("");
-    f.clear();
-  };
-
   // Board and Calendar own the plant picker (it drives what they render), so
   // the shared filter row leaves plant out there to avoid two controls for one
-  // thing. Tickets is scoped by job, not by bed, so it omits both.
-  const ownsPlant = tab === "schedule" || tab === "board";
-  const searchable = tab === "beds" || tab === "jobs" || tab === "pieces";
-
-  // My Projects narrows the schedule, so it must narrow the ticket list on the
-  // same terms — otherwise the Tickets tab would report jobs the rest of the
-  // module has hidden.
-  const scopedTickets = mine.active
-    ? ticketSource.rows.filter((t) => mine.members.has(t.jobNo))
-    : ticketSource.rows;
+  // thing. Schedule Changes is scoped by job, not by bed or day.
+  const ownsPlant = tab === "board" || tab === "calendar";
+  const isChanges = tab === "changes";
+  const searchable = tab === "beds" || tab === "pieces";
 
   const stranded = mine.active
-    ? mine.memberList.filter((n) => !scheduledJobNos.has(n))
+    ? mine.memberList.filter((n) => !app.scheduledJobNos.has(n))
     : [];
 
-  // My Projects narrows the movement report on the same terms as everything
-  // else, so the tab count can never disagree with what the table shows.
-  const inScope = (jobNo) => !mine.active || mine.members.has(jobNo);
-  const scopedMoved = diff.moved.filter((e) => inScope(e.row.jobNo));
   const scopedDiff = {
-    ...diff,
+    ...app.diff,
     moved: scopedMoved,
-    added: diff.added.filter((e) => inScope(e.row.jobNo)),
-    removed: diff.removed.filter((e) => inScope(e.prev.jobNo)),
+    added: app.diff.added.filter((e) => !mine.active || mine.members.has(e.row.jobNo)),
+    removed: app.diff.removed.filter((e) => !mine.active || mine.members.has(e.prev.jobNo)),
   };
 
   return (
     <div>
-      <DataBar
+      <PageHeader
         title="Production"
-        meta={data.meta}
-        rowCount={data.rows.length}
-        schema={schema}
-        persistWarning={data.persistWarning}
-        onLoaded={replaceSchedule}
-        onClear={() => { data.clear(); baseline.clear(); }}
+        subtitle={
+          app.schedule.meta?.fileName
+            ? `${app.schedule.meta.fileName} — exported ${app.schedule.meta.fileDate} — ${count(app.schedule.rows.length)} scheduled rows`
+            : `${count(app.schedule.rows.length)} scheduled rows`
+        }
+        actions={
+          <>
+            <ImportButton schema={schema} onLoaded={app.schedule.load} label={VERBS.replace} />
+            <RemoveButton onRemove={app.schedule.clear} what="the schedule" label={VERBS.remove} ghost={false} />
+          </>
+        }
       />
 
-      {diff.ready && (
-        <BaselineBar meta={baseline.meta} stats={diff.stats} onDiscard={baseline.clear} />
+      {app.schedule.persistWarning && <div className="notice amber">{app.schedule.persistWarning}</div>}
+
+      {app.schedule.meta?.warnings?.length > 0 && (
+        <details style={{ marginBottom: 12, fontSize: 11 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>
+            {app.schedule.meta.warnings.length} import note(s)
+          </summary>
+          <ul style={{ margin: "6px 0 0 18px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
+            {app.schedule.meta.warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </details>
       )}
 
-      {ticketSource.rows.length > 0 && (
-        <TicketBar
-          source={ticketSource}
-          coverage={tab === "tickets" ? null : coverage}
-          onSource={loadTickets}
-          onClear={ticketData.clear}
-          persistWarning={ticketData.persistWarning}
-        />
+      {/* Shown on every tab: the board is quietly drawing movement chips from
+          this, and a reader has to be able to see what "moved 3 days" is
+          measured from without hunting for it. */}
+      {app.diff.ready && (
+        <BaselineBar meta={app.baseline.meta} stats={app.diff.stats} onDiscard={app.baseline.clear} />
       )}
 
-      <Tabs
+      <RouteTabs
+        section="production"
+        tabs={tabsFor("production")}
         active={tab}
-        onChange={(t) => { setTab(t); setSearch(""); }}
-        tabs={[
-          { id: "board", label: "Board" },
-          { id: "schedule", label: "Calendar" },
-          { id: "overview", label: "Charts" },
-          { id: "beds", label: `Beds (${counts.beds})` },
-          { id: "jobs", label: `Jobs (${counts.jobs})` },
-          { id: "pieces", label: "Pieces" },
-          { id: "tickets", label: scopedTickets.length ? `Tickets (${scopedTickets.length})` : "Tickets" },
-          // Only offered once there is something to compare against. Before the
-          // first replacement the tab would have nothing to say, and an empty
-          // tab reads as a broken one.
-          ...(diff.ready ? [{ id: "movement", label: `Moved (${scopedMoved.length})` }] : []),
-        ]}
+        counts={{ beds: counts.beds, changes: app.diff.ready ? scopedMoved.length : undefined }}
+        // Nothing to compare against yet, and an empty tab reads as a broken one.
+        hidden={app.diff.ready ? [] : ["changes"]}
       />
 
       <FilterBar
-        leading={<ScopeToggle mine={mine} />}
-        range={tab === "tickets" || tab === "movement" ? undefined : f.range}
+        range={isChanges ? undefined : f.range}
         dateFrom={f.dateFrom} dateTo={f.dateTo}
         onFrom={f.setDateFrom} onTo={f.setDateTo}
         dimensions={
-          tab === "tickets" || tab === "movement"
+          isChanges
             ? []
             : [
                 ...(ownsPlant ? [] : [{ id: "plant", label: "Plants", value: f.plant, options: f.plants, onChange: f.setPlant }]),
@@ -228,9 +144,7 @@ export default function ProductionModule() {
         onClear={f.clear}
         search={searchable ? search : undefined}
         onSearch={searchable ? setSearch : undefined}
-        searchPlaceholder={
-          tab === "beds" ? "Search beds…" : tab === "jobs" ? "Search jobs…" : "Search marks, jobs, beds…"
-        }
+        searchPlaceholder={tab === "beds" ? "Search beds…" : "Search marks, jobs, beds…"}
       />
 
       {mine.scope !== SCOPE_ALL && !mine.count ? (
@@ -239,54 +153,47 @@ export default function ProductionModule() {
         <>
           {stranded.length > 0 && (
             <div className="notice amber">
-              {stranded.length} of your {mine.count} projects{" "}
+              {stranded.length} of your {mine.count} starred projects{" "}
               {stranded.length === 1 ? "is" : "are"} not in the loaded schedule
               ({stranded.slice(0, 8).join(", ")}{stranded.length > 8 ? "…" : ""}) — nothing
               is scheduled for them in this export. They stay in your list.
             </div>
           )}
 
-          {tab === "board" && (
+          {(tab === "board" || !tab) && (
             <PlanningBoard rows={f.filtered} plant={f.plant} plants={f.plants} onPlant={f.setPlant}
-                           tickets={tickets} movement={diff.ready ? diff.byRow : null} />
+                           tickets={app.tickets.index} movement={app.diff.ready ? app.diff.byRow : null} />
           )}
-          {tab === "schedule" && (
+          {tab === "calendar" && (
             <Schedule rows={f.filtered} plant={f.plant} plants={f.plants} onPlant={f.setPlant} />
           )}
-          {tab === "overview" && <Overview rows={f.filtered} onOpenJob={(job) => { f.setJob(job); setTab("jobs"); }} />}
+          {tab === "overview" && (
+            <Overview rows={f.filtered} onOpenJob={(job) => f.setJob(job)} />
+          )}
           {tab === "beds" && <Beds rows={f.filtered} search={search} />}
-          {tab === "jobs" && <Jobs rows={f.filtered} search={search} mine={mine} onOpenJob={(job) => { f.setJob(job); setTab("board"); }} />}
           {tab === "pieces" && <Pieces rows={f.filtered} search={search} />}
-          {tab === "movement" && (
+          {tab === "changes" && (
             <Movement
               diff={scopedDiff}
-              baselineMeta={baseline.meta}
-              currentMeta={data.meta}
+              baselineMeta={app.baseline.meta}
+              currentMeta={app.schedule.meta}
               mine={mine}
-              onOpenJob={(jobNo) => {
-                const hit = data.rows.find((r) => r.jobNo === jobNo);
-                if (hit) { f.setJob(hit.job); setTab("board"); }
-              }}
+              onOpenJob={(jobNo) => go("job", jobNo)}
             />
           )}
-          {tab === "tickets" && (
-            ticketSource.rows.length ? (
-              <Tickets
-                ticketRows={scopedTickets}
-                coverage={coverage}
-                scheduledJobNos={scheduledJobNos}
-                mine={mine}
-                onOpenJob={(jobNo) => {
-                  // Deep-link into the board on the job's full name, which is
-                  // what the job filter is keyed on.
-                  const hit = data.rows.find((r) => r.jobNo === jobNo);
-                  if (hit) { f.setJob(hit.job); setTab("board"); }
-                }}
-              />
-            ) : (
-              <TicketDrop onSource={loadTickets} />
-            )
+
+          {(tab === "board" || !tab) && !app.tickets.rows.length && (
+            <p className="hint">
+              No ticket report is loaded, so no card can be marked as missing its drawing.{" "}
+              <a className="link" href={hrefFor("sources")}>Add the Missing Piece Mark Ticket
+              report</a> and the board flags them.
+            </p>
           )}
+
+          <p className="hint">
+            Looking for a job's totals? Every job across cost, schedule and drawings is on{" "}
+            <a className="link" href={hrefFor("projects", "jobs")}>Projects</a>.
+          </p>
         </>
       )}
     </div>

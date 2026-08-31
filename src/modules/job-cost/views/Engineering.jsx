@@ -138,8 +138,8 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
                 <tr>
                   <th>Discipline</th>
                   <th className="num">Budget</th><th className="num">Forecast</th><th className="num">Actual</th>
-                  <th className="num" title="The report's own Variance column: Forecast less Actual">Var to Fcst</th>
-                  <th className="num" title="Derived: Budget less Actual. Not a column in the report.">Var to Budget</th>
+                  <th className="num" title="The report's own Variance column: Forecast less Actual">Variance to Forecast</th>
+                  <th className="num" title="Derived: Budget less Actual. Not a column in the report.">Variance to Budget</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,17 +211,17 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
           <table>
             <thead>
               <tr>
-                <SortableTh column="jobNo" label="Job #" sort={sort} onSort={onSort} />
+                <SortableTh column="jobNo" label="Job No" sort={sort} onSort={onSort} />
                 <SortableTh column="jobTitle" label="Job" sort={sort} onSort={onSort} />
                 <SortableTh column="plant" label="Plant" sort={sort} onSort={onSort} />
                 <SortableTh column="estCost" label="Budget" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="projCost" label="Forecast" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="actCost" label="Actual" sort={sort} onSort={onSort} align="right" />
-                <SortableTh column="variance" label="Var to Fcst" sort={sort} onSort={onSort} align="right" />
-                <SortableTh column="varToBudget" label="Var to Budget" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="variance" label="Variance to Forecast" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="varToBudget" label="Variance to Budget" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="pctProj" label="% of Fcst" sort={sort} onSort={onSort} align="right" />
-                <SortableTh column="perSfBudget" label="Budget /SF" sort={sort} onSort={onSort} align="right" />
-                <SortableTh column="perSfActual" label="Actual /SF" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="perSfBudget" label="Budget / SF" sort={sort} onSort={onSort} align="right" />
+                <SortableTh column="perSfActual" label="Actual / SF" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="piecesAct" label="Pieces" sort={sort} onSort={onSort} align="right" />
                 <SortableTh column="designPct" label="Designed" sort={sort} onSort={onSort} align="right" />
               </tr>
@@ -283,7 +283,7 @@ export default function Engineering({ jobs, costs, quantities, mine, onOpenJob, 
               <tr>
                 <th>Task</th><th>Description</th><th>Discipline</th><th className="num">Jobs</th>
                 <th className="num">Budget</th><th className="num">Forecast</th><th className="num">Actual</th>
-                <th className="num">Var to Fcst</th><th className="num">Var to Budget</th>
+                <th className="num">Variance to Forecast</th><th className="num">Variance to Budget</th>
               </tr>
             </thead>
             <tbody>

@@ -33,8 +33,12 @@ export function FilterBar({
           <span className="sr-only" hidden>{d.label}</span>
           <select className="field" value={d.value} onChange={(e) => d.onChange(e.target.value)}
                   title={d.label} aria-label={d.label}>
+            {/* A dimension whose option values aren't the words to show (a
+                presence filter, say) supplies a `labels` map. */}
             {d.options.map((o) => (
-              <option key={o} value={o}>{o === "All" ? `All ${d.label}` : o}</option>
+              <option key={o} value={o}>
+                {d.labels?.[o] ?? (o === "All" ? `All ${d.label}` : o)}
+              </option>
             ))}
           </select>
         </label>

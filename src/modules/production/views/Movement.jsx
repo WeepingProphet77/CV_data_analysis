@@ -147,7 +147,7 @@ export default function Movement({ diff, baselineMeta, currentMeta, mine, onOpen
                 <thead>
                   <tr>
                     {mine && <th style={{ width: 34 }} title="Add to My Projects">★</th>}
-                    <SortableTh column="jobNo" label="Job #" sort={sort} onSort={onSort} />
+                    <SortableTh column="jobNo" label="Job No" sort={sort} onSort={onSort} />
                     <SortableTh column="jobTitle" label="Job" sort={sort} onSort={onSort} />
                     <SortableTh column="later" label="Moved back" sort={sort} onSort={onSort} />
                     <SortableTh column="earlier" label="Moved up" sort={sort} onSort={onSort} />
@@ -202,7 +202,7 @@ export default function Movement({ diff, baselineMeta, currentMeta, mine, onOpen
                 <thead>
                   <tr>
                     <SortableTh column="days" label="Move" sort={pieceSort} onSort={onPieceSort} />
-                    <SortableTh column="jobNo" label="Job #" sort={pieceSort} onSort={onPieceSort} />
+                    <SortableTh column="jobNo" label="Job No" sort={pieceSort} onSort={onPieceSort} />
                     <SortableTh column="mark" label="Piece Mark" sort={pieceSort} onSort={onPieceSort} />
                     <SortableTh column="from" label="Was" sort={pieceSort} onSort={onPieceSort} />
                     <SortableTh column="to" label="Now" sort={pieceSort} onSort={onPieceSort} />

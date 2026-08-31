@@ -1,45 +1,41 @@
 /**
- * The module registry — the single place a module is declared.
+ * The section registry — the metadata in sections.js, with each section's
+ * component attached.
  *
- * Adding a module means adding one entry here plus its folder under
- * src/modules/. The nav, the router and the landing page all read from this.
+ * The split exists so sections.js stays plain ESM: the routing rules are tested
+ * in node, which cannot load .jsx. Everything that needs a component imports
+ * from here; everything that only needs to know what the sections *are* imports
+ * from sections.js.
  */
-import EmployeeTimeModule from "./employee-time/index.jsx";
+import Home from "./home/index.jsx";
+import Projects from "./projects/index.jsx";
 import ProductionModule from "./production/index.jsx";
-import JobCostModule from "./job-cost/index.jsx";
-import ScheduleModule from "./schedule/index.jsx";
+import Drawings from "./drawings/index.jsx";
+import CostModule from "./job-cost/index.jsx";
+import TimeModule from "./employee-time/index.jsx";
+import SourcesModule from "./sources/index.jsx";
+import JobPage from "./job/index.jsx";
+import { SECTIONS as META, UTILITY as UTILITY_META, DEFAULT_SECTION } from "./sections.js";
 
-export const MODULES = [
-  {
-    id: "employee-time",
-    label: "Employee Time",
-    blurb: "Timesheet hours by person, project, task and date — with cumulative burn plots.",
-    status: "ready",
-    Component: EmployeeTimeModule,
-  },
-  {
-    id: "production",
-    label: "Production",
-    blurb: "Scheduled pours by plant — calendar, charts, beds, jobs and pieces.",
-    status: "ready",
-    Component: ProductionModule,
-  },
-  {
-    id: "job-cost",
-    label: "Job Cost",
-    blurb: "Weekly job cost by plant — contract, billing, projected margin and cost-code overruns.",
-    status: "ready",
-    Component: JobCostModule,
-  },
-  {
-    id: "schedule",
-    label: "Schedule",
-    blurb: "Planned versus actual dates, slip and weekly load. Not built yet.",
-    status: "planned",
-    Component: ScheduleModule,
-  },
-];
+const COMPONENTS = {
+  "home": Home,
+  "projects": Projects,
+  "production": ProductionModule,
+  "drawings": Drawings,
+  "cost": CostModule,
+  "time": TimeModule,
+  "sources": SourcesModule,
+  "job": JobPage,
+};
 
-export const DEFAULT_MODULE = "employee-time";
+const attach = (list) => list.map((s) => ({ ...s, Component: COMPONENTS[s.id] }));
 
-export const findModule = (id) => MODULES.find((m) => m.id === id);
+export const SECTIONS = attach(META);
+export const UTILITY = attach(UTILITY_META);
+
+const ALL = [...SECTIONS, ...UTILITY];
+
+export const findSection = (id) => ALL.find((s) => s.id === id);
+
+export { DEFAULT_SECTION };
+export { tabsFor, paramsFor, isSection } from "./sections.js";

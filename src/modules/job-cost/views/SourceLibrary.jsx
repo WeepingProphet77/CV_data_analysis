@@ -1,16 +1,15 @@
 /**
- * The loaded-files strip.
+ * Importing a job cost workbook.
  *
- * DataBar shows one file and replaces it. This module holds a file per plant,
- * each refreshed on its own schedule, so the strip lists them all and every row
- * is independently replaceable. Dropping a file whose plant is already present
- * overwrites that plant and leaves the others alone.
+ * This module holds a file per plant, each refreshed on its own schedule, so an
+ * import overwrites just that plant and leaves the others alone — and several
+ * files can be dropped at once. The *listing* of what is loaded is the shared
+ * strip now (components/SourceStrip.jsx); only the import belongs here, because
+ * only this source reads workbooks and owns the lazy SheetJS import.
  */
 import React, { useCallback, useRef, useState } from "react";
-import { Badge } from "../../../components/ui.jsx";
 import { ErrorBox } from "../../../components/FileImport.jsx";
 import { readJobCostFile } from "../importFile.js";
-import { count } from "../../../core/format.js";
 
 const ACCEPT = ".xlsx,.xls";
 
@@ -103,76 +102,5 @@ export function SourceDrop({ onSource, compact }) {
         Files are parsed in your browser and cached in this browser only. Nothing is uploaded anywhere.
       </p>
     </div>
-  );
-}
-
-/** The strip listing what is loaded, one row per plant. */
-export default function SourceLibrary({ sources, data, onSource, onRemove, onClear, persistWarning }) {
-  const warnings = sources.flatMap((s) => s.warnings.map((w) => `${s.plant}: ${w}`));
-
-  return (
-    <>
-      <div className="topbar">
-        <div>
-          <div className="title">Job Cost</div>
-          <div className="subtitle">
-            {count(data.jobs.length)} active jobs across {sources.length} plant{sources.length === 1 ? "" : "s"}
-            {data.asOfRange.max && (
-              data.mixedAsOf
-                ? ` — as of ${data.asOfRange.min} to ${data.asOfRange.max}`
-                : ` — as of ${data.asOfRange.max}`
-            )}
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <SourceDrop onSource={onSource} compact />
-          <button
-            className="btn danger"
-            onClick={() => { if (window.confirm("Remove every plant's cost report from this browser?")) onClear(); }}
-          >
-            Clear All
-          </button>
-        </div>
-      </div>
-
-      <div className="srclist">
-        {sources.map((s) => (
-          <div className="srcrow" key={s.id}>
-            <span className="srcplant">{s.plant}</span>
-            {/* A plant refreshed later than another is the trap this strip
-                exists to prevent: comparing plants across different cut-offs. */}
-            <Badge tone={data.mixedAsOf && s.asOf !== data.asOfRange.max ? "amber" : "blue"}
-                   title={data.mixedAsOf && s.asOf !== data.asOfRange.max
-                     ? `Older than the newest report loaded (${data.asOfRange.max})`
-                     : "Report cut-off date"}>
-              as of {s.asOf || "unknown"}
-            </Badge>
-            <span className="muted">{count(s.jobs.length)} jobs</span>
-            <span className="muted" title={s.fileName} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {s.fileName}
-            </span>
-            <button className="btn ghost" onClick={() => onRemove(s.id)} title={`Remove ${s.plant}`}>Remove</button>
-          </div>
-        ))}
-      </div>
-
-      {data.mixedAsOf && (
-        <div className="notice amber">
-          Plants were exported on different dates ({data.asOfRange.min} — {data.asOfRange.max}).
-          Company-wide totals mix those cut-offs; refresh the older plants before reading them as one number.
-        </div>
-      )}
-
-      {persistWarning && <div className="notice amber">{persistWarning}</div>}
-
-      {warnings.length > 0 && (
-        <details style={{ marginBottom: 12, fontSize: 11 }}>
-          <summary className="muted" style={{ cursor: "pointer" }}>{warnings.length} import note(s)</summary>
-          <ul style={{ margin: "6px 0 0 18px", color: "var(--text-secondary)", lineHeight: 1.7 }}>
-            {warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
-        </details>
-      )}
-    </>
   );
 }
