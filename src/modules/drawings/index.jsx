@@ -20,7 +20,7 @@ import { SCOPE_ALL } from "../../core/myProjects.js";
 import { SourceStrip, SourceRow, RemoveButton } from "../../components/SourceStrip.jsx";
 import { urgency } from "../production/tickets.js";
 import { CoverageNotice, TicketDrop, TicketImportButton } from "../production/views/TicketImport.jsx";
-import { count, dateToIso } from "../../core/format.js";
+import { count, dateToIso, ago } from "../../core/format.js";
 import { go, hrefFor } from "../../core/routing.js";
 import { tabsFor } from "../sections.js";
 import { VERBS } from "../../app/sources.js";
@@ -70,9 +70,12 @@ export default function DrawingsModule({ tab }) {
           badgeTone="amber"
           badgeTitle="Pieces with no ticket drawing"
           detail={
-            app.tickets.source.range.min
+            (app.tickets.source.range.min
               ? `bed dates ${app.tickets.source.range.min} → ${app.tickets.source.range.max}`
-              : "no bed dates"
+              : "no bed dates") +
+            (app.tickets.source.fileDate
+              ? ` · modified ${app.tickets.source.fileDate} (${ago(app.tickets.source.fileDate)})`
+              : " · modified date unknown")
           }
           fileName={app.tickets.source.fileName}
           actions={

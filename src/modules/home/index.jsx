@@ -18,7 +18,7 @@ import { describeSources, VERBS } from "../../app/sources.js";
 import { PageHeader } from "../../components/Page.jsx";
 import { Panel, Badge } from "../../components/ui.jsx";
 import { hrefFor } from "../../core/routing.js";
-import { count } from "../../core/format.js";
+import { count, ago } from "../../core/format.js";
 
 /**
  * The entry points, as tasks rather than as module names, each stating the file
@@ -92,10 +92,21 @@ export default function Home() {
             <div className="srcrow" key={s.id}>
               <span className="srcplant">{s.label}</span>
               {s.loaded
-                ? <Badge tone={s.warn ? "amber" : "blue"}>{s.warn ? "check this" : "loaded"}</Badge>
+                ? <Badge tone={s.warn || s.stale ? "amber" : "blue"}>
+                    {s.warn ? "check this" : s.stale ? "may be stale" : "loaded"}
+                  </Badge>
                 : <Badge tone="gray">not loaded</Badge>}
               <span className="muted">
                 {s.loaded ? s.detail : s.file}
+              </span>
+              {/* How old the copy is — the question asked most often of this
+                  strip, so it sits in the strip rather than one click away. */}
+              <span className="muted nowrap"
+                    style={s.stale ? { color: "var(--warning)", fontWeight: 700 } : undefined}
+                    title={s.modified ? `File last modified ${s.modified}` : undefined}>
+                {s.loaded
+                  ? (s.modified ? `modified ${s.modified} · ${ago(s.modified)}` : "modified date unknown")
+                  : ""}
               </span>
               <span className="muted" title={s.fileName}
                     style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -116,6 +127,16 @@ export default function Home() {
             <strong>{s.label}:</strong> {s.warn}
           </div>
         ))}
+
+        {sources.some((s) => s.loaded && s.stale) && (
+          <div className="notice amber">
+            <strong>Some files are getting old.</strong>{" "}
+            {sources.filter((s) => s.loaded && s.stale)
+              .map((s) => `${s.label} (${ago(s.modified)})`).join(", ")}
+            . <a className="link" href={hrefFor("sources")}>Replace them</a> if the figures
+            need to be current.
+          </div>
+        )}
       </Panel>
 
       <Panel title="Start here">

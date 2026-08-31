@@ -249,6 +249,28 @@ const withApp = (el, value = appLoaded) => (
   <AppDataContext.Provider value={value}>{el}</AppDataContext.Provider>
 );
 
+/*
+ * File-age fixtures. "How old is this copy?" is what Sources is most often
+ * opened to answer, so all three states are exercised: current, long past the
+ * staleness threshold, and imported before the date was recorded at all.
+ */
+const iso = (daysAgo) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const withAges = (base, days) => ({
+  ...base,
+  schedule: { ...base.schedule, meta: { ...base.schedule.meta, fileDate: iso(days) } },
+  tickets: { ...base.tickets, source: { ...base.tickets.source, fileDate: iso(days) } },
+  time: { ...base.time, meta: { ...(base.time.meta || {}), fileDate: iso(days) } },
+  costLib: { ...base.costLib, sources: base.costLib.sources.map((x, i) => ({ ...x, fileDate: iso(days + i * 3) })) },
+});
+const appFresh = withAges(appLoaded, 1);
+const appStale = withAges(appLoaded, 40);
+// appLoaded's workbook sources carry no fileDate at all — the pre-existing
+// import case, which must read as "unknown" rather than as an empty cell.
+
 const projRows = projectRows({
   costJobs: jcJobs, scheduleRows: prodRows, ticketRows: ticketSource.rows, timeRows: rows,
 });
@@ -371,8 +393,12 @@ const cases = [
   ["JC / CostCodes no costs", <JcCostCodes costs={[]} jobs={[]} search="" onOpenJob={noop} />],
   // The shell and the sections that read every source at once.
   ["Home", withApp(<HomeModule />)],
+  ["Home, stale files", withApp(<HomeModule />, appStale)],
   ["Home, nothing loaded", withApp(<HomeModule />, appEmpty)],
+  ["AppHeader, stale files", <AppHeader section="home" mine={prodMine} summary={sourceSummary(appStale)} />],
   ["Sources", withApp(<SourcesModule />)],
+  ["Sources, fresh files", withApp(<SourcesModule />, appFresh)],
+  ["Sources, stale files", withApp(<SourcesModule />, appStale)],
   ["Sources, nothing loaded", withApp(<SourcesModule />, appEmpty)],
   ["Projects / All Jobs", withApp(<ProjectsModule tab="jobs" />)],
   ["Projects / Cost vs Schedule", withApp(<ProjectsModule tab="vs-schedule" />)],
@@ -585,6 +611,35 @@ if (!projMineHtml.includes("★") || !projAllHtml.includes("☆")) {
   console.log("FAIL   star reflects membership");
 } else {
   console.log("  ok   star reflects membership");
+}
+
+// Every loaded source must state how old its file is -- that is the whole
+// point of the page. Three states, three different renderings, and a stale
+// file has to be visibly different from a fresh one rather than just later.
+{
+  const fresh = renderToString(withApp(<SourcesModule />, appFresh));
+  const stale = renderToString(withApp(<SourcesModule />, appStale));
+  const unknown = renderToString(withApp(<SourcesModule />, appLoaded));
+  const dated = (h) => (h.match(/modified \d{4}-\d{2}-\d{2}/g) || []).length;
+  if (dated(fresh) < 4) {
+    failures++;
+    console.log(`FAIL   every loaded source shows a modified date (found ${dated(fresh)})`);
+  } else {
+    console.log(`  ok   sources show a modified date     ${dated(fresh)} dates on the page`);
+  }
+  if (/more than \d+ days ago/.test(fresh) || !/more than \d+ days ago/.test(stale)) {
+    failures++;
+    console.log("FAIL   a stale file is called out and a fresh one is not");
+  } else {
+    console.log("  ok   stale files are called out      fresh ones are not");
+  }
+  // A file with no recorded date must say so, not render blank or "Invalid Date".
+  if (!/date unknown|modified date was recorded/.test(unknown) || /Invalid Date|NaN/.test(unknown)) {
+    failures++;
+    console.log("FAIL   an unrecorded date reads as unknown");
+  } else {
+    console.log("  ok   an unrecorded date reads as unknown");
+  }
 }
 
 // The unified table must carry both sides: a job the cost reports know and a

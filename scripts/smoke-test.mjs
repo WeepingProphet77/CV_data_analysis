@@ -10,6 +10,9 @@ import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import { rollup, cumulativeSeries, dateDomain, topNWithOther, sumBy, distinct } from "../src/core/aggregate.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { niceTicks } from "../src/components/charts/scale.js";
+import { daysSince, ago } from "../src/core/format.js";
+import { isoFromMtime } from "../src/core/parse.js";
+import { describeSources, sourceSummary, STALE_AFTER_DAYS } from "../src/app/sources.js";
 import { parseRoute, hrefFor, segments } from "../src/core/routing.js";
 import { isSection, tabsFor, paramsFor, SECTIONS, DEFAULT_SECTION, findSection, ALIASES } from "../src/modules/sections.js";
 import { projectRows, applyPresence, PRESENCE } from "../src/modules/projects/rows.js";
@@ -213,6 +216,63 @@ eq("a job no source knows has no cost section", ajNone.cost, null);
 eq("a job no source knows has no schedule section", ajNone.schedule, null);
 eq("job numbers gathered from every source",
    allJobNumbers({ costJobs: pjCost, scheduleRows: pjSched, ticketRows: pjTick }), ["100", "200", "300"]);
+
+console.log("\nFile age");
+const TODAY = new Date(2026, 7, 31);            // 2026-08-31, local
+eq("today is zero days old", daysSince("2026-08-31", TODAY), 0);
+eq("yesterday", ago("2026-08-30", TODAY), "yesterday");
+eq("a week", ago("2026-08-24", TODAY), "last week");
+eq("three weeks", ago("2026-08-10", TODAY), "3 weeks ago");
+// A clock disagreement must not render as "-2 days ago", which reads as a bug.
+eq("a future file reads forward", ago("2026-09-02", TODAY), "in 2 days");
+eq("no date is not a date", daysSince("", TODAY), null);
+eq("junk is not a date", daysSince("nope", TODAY), null);
+// The local calendar day, not UTC — a file saved in the evening in a western
+// zone must not be reported as tomorrow's.
+eq("mtime converts through the local day",
+   isoFromMtime(new Date(2026, 7, 31, 23, 30).getTime()), "2026-08-31");
+eq("no mtime yields no date", isoFromMtime(undefined), "");
+
+console.log("\nSource ages");
+const ds = (rows, meta) => ({ rows, meta: meta || null, persistWarning: "" });
+const mkApp = (schedDate, tickDate, costDates, timeDate) => ({
+  schedule: ds([{}], { fileName: "S.xls", fileDate: schedDate }),
+  scheduleRange: { min: "2026-08-01", max: "2026-08-31" },
+  tickets: { source: { fileName: "T.xlsx", fileDate: tickDate, rows: [{}], jobs: [1], plants: [], range: { min: "", max: "" }, warnings: [] }, rows: [{}] },
+  ticketData: ds([]),
+  coverage: { ticketsInWindow: 1 },
+  costLib: { sources: costDates.map((d, i) => ({ plant: `P${i}`, fileDate: d, warnings: [] })), persistWarning: "" },
+  cost: { data: { jobs: [], asOfRange: { min: "", max: "" }, mixedAsOf: false } },
+  time: timeDate ? ds([{}], { fileName: "E.xls", fileDate: timeDate }) : ds([]),
+});
+
+{
+  const d = describeSources(mkApp("2026-08-30", "2026-08-01", ["2026-08-26", "2026-08-05"], ""), TODAY);
+  const by = Object.fromEntries(d.map((x) => [x.id, x]));
+  eq("a fresh file is not stale", by.schedule.stale, false);
+  eq("an old file is stale", by.tickets.stale, true);
+  // A library is only as current as its stalest member, so the card reports
+  // the oldest file rather than the newest.
+  eq("the cost card reports its oldest plant", by.cost.modified, "2026-08-05");
+  eq("the cost card is stale on that oldest plant", by.cost.stale, true);
+  // Unknown is neither fresh nor stale — sources imported before the date was
+  // captured must not be accused of being old.
+  eq("an unknown date is not called stale", by.time.stale, false);
+  eq("an unknown date has no age", by.time.modifiedDays, null);
+  eq("every source carries the age fields",
+     d.every((x) => "modified" in x && "modifiedDays" in x && "stale" in x), true);
+}
+{
+  // The header chip has to raise an old file, or the age is only visible to
+  // someone who already went looking for it.
+  const fresh = sourceSummary(mkApp("2026-08-30", "2026-08-30", ["2026-08-30"], "2026-08-30"), TODAY);
+  ok("a fresh set does not raise the chip", !fresh.warn, JSON.stringify(fresh.warnings));
+  const old = sourceSummary(mkApp("2026-01-01", "2026-08-30", ["2026-08-30"], "2026-08-30"), TODAY);
+  ok("an old file raises the chip", old.warn && old.stale.length === 1);
+  ok("and the chip can say why", old.warnings.some((w) => /last modified/.test(w)));
+  ok(`the threshold is ${STALE_AFTER_DAYS} days`,
+     describeSources(mkApp(isoFromMtime(TODAY.getTime() - (STALE_AFTER_DAYS - 1) * 86400000), "", [], ""), TODAY)[0].stale === false);
+}
 
 console.log("\nAxis ticks");
 eq("nice ticks from 0..87", niceTicks(0, 87, 5).ticks, [0, 20, 40, 60, 80, 100]);

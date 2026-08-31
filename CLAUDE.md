@@ -97,6 +97,11 @@ shell may not pick that up, so prefix commands with
 - **A missing rate is `null`, not `0`.** A job with no square footage has an
   unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
 - **A total row shows variance.** Every table that has the column totals it.
+- **Three different dates, never conflated.** `fileDate` is the file's mtime
+  ("how old is my copy"), the job cost report's `asOf` is the report's own
+  cut-off printed inside it, and `importedAt` is when it was dropped on the
+  page. A file re-saved today does not make the report inside it newer. The UI
+  says "modified", never "exported" (§15).
 - **Don't trust a doc edit that wasn't asserted.** Scripted edits to this file
   have silently matched nothing more than once; check the result.
 - **Sections are named after questions, not exports.** "Job Cost" and "Employee
@@ -1756,6 +1761,33 @@ loaded" rather than the wiring fault they are.
 
 The shell holds a placeholder until **every** record resolves. Sections no
 longer each remember to gate on `ready`.
+
+### File age
+
+Every source states **when its file was last modified**, on Sources, on Home and
+in each section's own strip — the question "how old is this and do I need to
+refresh it" was previously unanswerable for two of the four sources.
+
+- `core/parse.js` exports `isoFromMtime`, and all three import paths use it:
+  the flat-table parser already did, and `job-cost/importFile.js` and
+  `production/ticketFile.js` captured **no date at all** until 2026-08-31.
+- It is the file's **mtime**, so the UI says "modified" and never "exported". A
+  copied or re-saved file carries a newer mtime than the report inside it.
+- **Do not conflate it with the cost report's `asOf`**, which the report prints
+  inside itself and which is the more authoritative of the two where it exists.
+  Both are shown, side by side, on every plant row.
+- The cost card reports its **oldest** plant: a library is only as current as
+  its stalest member.
+- `STALE_AFTER_DAYS` (14) in `app/sources.js` raises an amber badge and the
+  header chip. It is a **rule of thumb, not anyone's policy**, and the page says
+  so in as many words — the cost reports are weekly, so a fortnight means a
+  refresh was missed. Change it there if the real cadence differs.
+- **Unknown is neither fresh nor stale.** Sources imported before the date was
+  captured render "date unknown" and are never accused of being old. Tested.
+- Build phrases like "modified 2026-08-30" as **one template string**, not
+  adjacent JSX text nodes: React's server renderer splits those with `<!-- -->`,
+  which makes the phrase unreadable in the DOM and unassertable in a test. That
+  is how the first attempt was caught.
 
 ### Sources: one vocabulary
 

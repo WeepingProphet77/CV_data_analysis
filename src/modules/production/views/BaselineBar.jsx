@@ -22,7 +22,7 @@ export default function BaselineBar({ meta, stats, onDiscard }) {
           {meta.fileName || "the previous upload"}
         </Badge>
         <span className="muted">
-          {meta.fileDate ? `exported ${meta.fileDate}` : "export date unknown"}
+          {meta.fileDate ? `modified ${meta.fileDate}` : "modified date unknown"}
           {meta.replacedOn ? ` · replaced ${meta.replacedOn}` : ""}
           {meta.rowCount ? ` · ${count(meta.rowCount)} rows` : ""}
         </span>

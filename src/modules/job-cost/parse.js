@@ -198,7 +198,7 @@ export function plantFromFileName(fileName) {
  * `sheets` is [{ name, aoa }]. `plant` identifies the source and is what a
  * re-import overwrites, so it is the library key.
  */
-export function buildSource(sheets, { plant, fileName }) {
+export function buildSource(sheets, { plant, fileName, fileDate = "" }) {
   const jobs = [];
   const costs = [];
   const quantities = [];
@@ -253,7 +253,12 @@ export function buildSource(sheets, { plant, fileName }) {
     id: plant,
     plant,
     fileName,
+    // The report's own cut-off, printed inside it ("As of 8/26/2026").
     asOf: asOf[asOf.length - 1] || "",
+    // When the *file* was last written, which is a different question and the
+    // only age signal the other exports have at all. Blank on sources imported
+    // before this was captured — rendered as unknown, never as a guess.
+    fileDate,
     importedAt: new Date().toISOString(),
     jobs, costs, quantities, warnings,
   };

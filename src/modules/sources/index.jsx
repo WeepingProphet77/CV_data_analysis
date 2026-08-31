@@ -8,13 +8,13 @@
  */
 import React from "react";
 import { useAppData } from "../../core/appData.js";
-import { describeSources, VERBS } from "../../app/sources.js";
+import { describeSources, VERBS, STALE_AFTER_DAYS } from "../../app/sources.js";
 import { PageHeader } from "../../components/Page.jsx";
 import { SourceStrip, SourceRow, RemoveButton } from "../../components/SourceStrip.jsx";
 import { Panel, Badge } from "../../components/ui.jsx";
 import { ImportButton } from "../../components/FileImport.jsx";
 import { hrefFor } from "../../core/routing.js";
-import { count } from "../../core/format.js";
+import { count, ago, daysSince } from "../../core/format.js";
 import productionSchema from "../production/schema.js";
 import timeSchema from "../employee-time/schema.js";
 import { SourceDrop } from "../job-cost/views/SourceLibrary.jsx";
@@ -52,6 +52,16 @@ export default function SourcesModule() {
         server and no upload. Removing a file here does not touch your{" "}
         <a className="link" href={hrefFor("projects")}>starred projects</a>; that list is kept
         separately on purpose.
+      </p>
+
+      {/* The question this page is most often opened to answer. Stated once,
+          at the top, rather than implied by a badge nobody can decode. */}
+      <p className="hint" style={{ marginBottom: 16, maxWidth: 680 }}>
+        <strong style={{ color: "var(--text-secondary)" }}>Modified</strong> is when the file
+        itself was last written — how old your copy is. It is not the same as the job cost
+        report's own <strong>as of</strong> date, which the report prints inside itself; a file
+        re-saved today does not make the report inside it any newer. Anything older than{" "}
+        {STALE_AFTER_DAYS} days is flagged, which is a rule of thumb rather than anyone's policy.
       </p>
 
       <SourceCard
@@ -100,7 +110,20 @@ export default function SourcesModule() {
                 ? `Older than the newest report loaded (${app.cost.data.asOfRange.max})`
                 : "Report cut-off date"
             }
-            detail={`${count(s.jobs.length)} jobs`}
+            // Each plant is its own file on its own refresh cycle, so each one
+            // carries both dates: the report's cut-off in the badge, the file's
+            // own age here.
+            detail={
+              <>
+                {`${count(s.jobs.length)} jobs · modified `}
+                {s.fileDate
+                  ? <span style={daysSince(s.fileDate) > STALE_AFTER_DAYS ? { color: "var(--warning)", fontWeight: 700 } : undefined}
+                          title={`Last written ${ago(s.fileDate)}`}>
+                      {`${s.fileDate} (${ago(s.fileDate)})`}
+                    </span>
+                  : <span title="Imported before the modified date was recorded">unknown</span>}
+              </>
+            }
             fileName={s.fileName}
             actions={<RemoveButton onRemove={() => app.costLib.remove(s.id)} what={s.plant} />}
           />
@@ -125,6 +148,18 @@ export default function SourcesModule() {
   );
 }
 
+/**
+ * The file's own age, as a badge.
+ *
+ * Both halves earn their place: the date answers "which copy is this", the
+ * relative age answers "should I refresh it", and people read those two
+ * questions at different speeds.
+ */
+function FileAge({ modified, stale, multi }) {
+  if (!modified) return "date unknown";
+  return `${multi ? "oldest " : ""}modified ${modified} · ${ago(modified)}${stale ? " ⚠" : ""}`;
+}
+
 /** One source: what it is, whether it is loaded, and the verbs for it. */
 function SourceCard({ d, expected, add, replace, onRemove, removeLabel, rows, note }) {
   return (
@@ -136,8 +171,13 @@ function SourceCard({ d, expected, add, replace, onRemove, removeLabel, rows, no
           <SourceStrip>
             <SourceRow
               name={d.file}
-              badge={d.multi ? undefined : "loaded"}
-              badgeTone="blue"
+              badge={<FileAge modified={d.modified} days={d.modifiedDays} stale={d.stale} multi={d.multi} />}
+              badgeTone={d.stale ? "amber" : d.modified ? "blue" : "gray"}
+              badgeTitle={
+                d.modified
+                  ? `The file was last written on ${d.modified}`
+                  : "This file was imported before the modified date was recorded — replace it to capture one"
+              }
               detail={d.detail}
               fileName={d.multi ? undefined : d.fileName}
               actions={
@@ -149,6 +189,23 @@ function SourceCard({ d, expected, add, replace, onRemove, removeLabel, rows, no
             />
             {rows}
           </SourceStrip>
+
+          {/* Age is stated as a sentence too, not only as a badge: the badge
+              answers "when", this answers "so what". */}
+          {d.stale && (
+            <div className="notice amber">
+              {`This file was last modified ${ago(d.modified)} (${d.modified}) — more than ${STALE_AFTER_DAYS} days ago. `}
+              {d.multi
+                ? "That is the oldest plant in the library; the per-plant rows below say which."
+                : "Re-run the report and replace it if the figures need to be current."}
+            </div>
+          )}
+          {!d.modified && (
+            <div className="notice">
+              No modified date was recorded for this file — it was imported before that was
+              captured. Replacing it will pick one up.
+            </div>
+          )}
 
           {d.warn && <div className="notice amber">{d.warn}</div>}
           {d.persistWarning && <div className="notice amber">{d.persistWarning}</div>}

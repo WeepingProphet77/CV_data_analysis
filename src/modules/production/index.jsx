@@ -25,7 +25,7 @@ import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
 import { hrefFor, go } from "../../core/routing.js";
-import { count } from "../../core/format.js";
+import { count, ago } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
 import schema from "./schema.js";
 import { useProductionFilters } from "./useProductionFilters.js";
@@ -88,7 +88,7 @@ export default function ProductionModule({ tab }) {
         title="Production"
         subtitle={
           app.schedule.meta?.fileName
-            ? `${app.schedule.meta.fileName} — exported ${app.schedule.meta.fileDate} — ${count(app.schedule.rows.length)} scheduled rows`
+            ? `${app.schedule.meta.fileName} — modified ${app.schedule.meta.fileDate} (${ago(app.schedule.meta.fileDate)}) — ${count(app.schedule.rows.length)} scheduled rows`
             : `${count(app.schedule.rows.length)} scheduled rows`
         }
         actions={

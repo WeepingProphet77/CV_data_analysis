@@ -8,6 +8,7 @@
  * which is pure and node-importable.
  */
 import { buildSource, plantFromFileName } from "./parse.js";
+import { isoFromMtime } from "../../core/parse.js";
 
 /**
  * readJobCostFile(file, { plant }) -> a library source.
@@ -35,5 +36,11 @@ export async function readJobCostFile(file, { plant } = {}) {
     aoa: XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null, blankrows: true }),
   }));
 
-  return buildSource(sheets, { plant: plant || plantFromFileName(name), fileName: name });
+  return buildSource(sheets, {
+    plant: plant || plantFromFileName(name),
+    fileName: name,
+    // How old the file itself is — the question "do I need to refresh this?"
+    // is asked of every source, and only the flat-table parser was answering it.
+    fileDate: isoFromMtime(file.lastModified),
+  });
 }

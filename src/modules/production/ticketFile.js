@@ -8,6 +8,7 @@
  * ./ticketParse.js, which is pure and node-importable.
  */
 import { buildTicketSource } from "./ticketParse.js";
+import { isoFromMtime } from "../../core/parse.js";
 
 export async function readTicketFile(file) {
   if (!file) throw new Error("No file selected.");
@@ -26,7 +27,7 @@ export async function readTicketFile(file) {
     header: 1, raw: true, defval: null, blankrows: true,
   });
 
-  const src = buildTicketSource(aoa, { fileName: name });
+  const src = buildTicketSource(aoa, { fileName: name, fileDate: isoFromMtime(file.lastModified) });
   if (!src.rows.length) {
     throw new Error(
       `No missing-ticket rows were found in "${name}". If every piece in the ` +

@@ -18,7 +18,7 @@ import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
 import { hrefFor, go } from "../../core/routing.js";
-import { count } from "../../core/format.js";
+import { count, ago } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
 import schema from "./schema.js";
 import { useTimeFilters } from "./useTimeFilters.js";
@@ -88,7 +88,7 @@ export default function TimeModule({ tab, route }) {
         title="Time"
         subtitle={
           data.meta?.fileName
-            ? `${data.meta.fileName} — exported ${data.meta.fileDate} — ${count(data.rows.length)} entries`
+            ? `${data.meta.fileName} — modified ${data.meta.fileDate} (${ago(data.meta.fileDate)}) — ${count(data.rows.length)} entries`
             : `${count(data.rows.length)} entries`
         }
         actions={

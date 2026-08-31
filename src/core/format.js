@@ -107,3 +107,38 @@ export function sqft(n) {
   if (n == null || Number.isNaN(n)) return "—";
   return `${Math.round(Number(n)).toLocaleString()} SF`;
 }
+
+/**
+ * Whole days between an ISO date and `today`, or null if it isn't a date.
+ *
+ * Parses to local midnight on both sides — `new Date('2026-03-14')` is UTC and
+ * shifts the day in western zones, which would make a file uploaded this
+ * morning read as a day old (CLAUDE.md §9).
+ */
+export function daysSince(iso, today = new Date()) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(String(iso))) return null;
+  const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number);
+  const then = new Date(y, m - 1, d);
+  const now = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (Number.isNaN(then.getTime())) return null;
+  return Math.round((now - then) / 86400000);
+}
+
+/**
+ * "today" / "yesterday" / "12 days ago" / "in 3 days".
+ *
+ * How old a file is, in the terms someone actually asks the question. A future
+ * date is phrased forward rather than as a negative age — it happens when a
+ * machine's clock disagrees, and "-2 days ago" reads as a bug.
+ */
+export function ago(iso, today = new Date()) {
+  const d = daysSince(iso, today);
+  if (d == null) return "";
+  if (d === 0) return "today";
+  if (d === 1) return "yesterday";
+  if (d < 0) return d === -1 ? "tomorrow" : `in ${-d} days`;
+  if (d < 7) return `${d} days ago`;
+  if (d < 14) return "last week";
+  if (d < 60) return `${Math.round(d / 7)} weeks ago`;
+  return `${Math.round(d / 30)} months ago`;
+}

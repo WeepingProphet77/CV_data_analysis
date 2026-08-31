@@ -93,7 +93,7 @@ const GRAND_RE = /^grand\s+total:\s*(\d+)/i;
  * `aoa` is the worksheet as an array of arrays (raw values, blanks as null).
  * One output row = one piece that has no ticket.
  */
-export function buildTicketSource(aoa, { fileName = "" } = {}) {
+export function buildTicketSource(aoa, { fileName = "", fileDate = "" } = {}) {
   const warnings = [];
 
   // The header row is the one naming the columns; found rather than assumed, so
@@ -215,6 +215,9 @@ export function buildTicketSource(aoa, { fileName = "" } = {}) {
 
   return {
     fileName,
+    // When the file was last written. Blank on reports imported before this
+    // was captured — shown as unknown rather than guessed at.
+    fileDate,
     headers,
     rows,
     jobs,

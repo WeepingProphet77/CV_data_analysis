@@ -25,7 +25,7 @@ import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL, SCOPE_MINE } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
 import { hrefFor, go } from "../../core/routing.js";
-import { count } from "../../core/format.js";
+import { count, ago } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
 import { categoryOptions } from "./categories.js";
 import { SourceDrop } from "./views/SourceLibrary.jsx";
@@ -90,7 +90,12 @@ export default function CostModule({ tab }) {
                 ? `Older than the newest report loaded (${data.asOfRange.max})`
                 : "Report cut-off date"
             }
-            detail={`${count(s.jobs.length)} jobs`}
+            // Two dates, deliberately distinct: the badge carries the report's
+            // own cut-off, this carries how old the file is.
+            detail={
+              `${count(s.jobs.length)} jobs · modified ` +
+              (s.fileDate ? `${s.fileDate} (${ago(s.fileDate)})` : "unknown")
+            }
             fileName={s.fileName}
             actions={<RemoveButton onRemove={() => app.costLib.remove(s.id)} what={s.plant} />}
           />

@@ -126,6 +126,27 @@ export function mapColumns(headers, schema) {
  * Parse a File into typed rows for `schema`.
  * Resolves to { rows, meta } or rejects with a message safe to show the user.
  */
+/**
+ * A File's last-modified time as an ISO date, or "" when the browser doesn't
+ * report one.
+ *
+ * This is the file's mtime, which is the best available answer to "how old is
+ * this data?" for every export except the job cost report — that one prints its
+ * own cut-off inside it. It is **not** proof of when the report was run: a
+ * copied or re-saved file carries a newer mtime. The UI says "file modified"
+ * for exactly that reason and never says "exported".
+ *
+ * Converted through the local calendar day, so a file saved this evening is not
+ * reported as tomorrow's in eastern zones.
+ */
+export function isoFromMtime(ms) {
+  if (!ms && ms !== 0) return "";
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export async function parseFile(file, schema) {
   const { records, headers, sheetName, sheetNames } = await readRecords(file);
 
@@ -188,7 +209,7 @@ export async function parseFile(file, schema) {
     rows,
     meta: {
       fileName: file.name,
-      fileDate: new Date(file.lastModified).toISOString().slice(0, 10),
+      fileDate: isoFromMtime(file.lastModified),
       importedAt: new Date().toISOString(),
       rowCount: rows.length,
       sheetName,

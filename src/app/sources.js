@@ -12,10 +12,41 @@
  * returns descriptors. No React, so the warning rules can be tested directly.
  */
 
+import { daysSince } from "../core/format.js";
+
 /** Verb set, used verbatim by every strip. Three actions, three words. */
 export const VERBS = { add: "Add", replace: "Replace", remove: "Remove", removeAll: "Remove all" };
 
+/**
+ * How old a file has to be before it is worth a second look.
+ *
+ * A rule of thumb, not a policy anyone stated: the job cost reports are pulled
+ * weekly, so a fortnight means at least one refresh was missed. It is applied
+ * to every source for consistency and **the rule is printed in the UI**, so a
+ * badge never has to be guessed at. Change it here if the real cadence differs.
+ */
+export const STALE_AFTER_DAYS = 14;
+
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The age block every source carries.
+ *
+ * `modified` is the file's own last-modified date — the best answer to "how old
+ * is this?" for every export except the job cost report, which prints its own
+ * cut-off inside it. The two are kept apart on purpose: a file re-saved today
+ * does not make the report inside it any newer.
+ */
+function ageOf(fileDate, today) {
+  const days = daysSince(fileDate, today);
+  return {
+    modified: fileDate || "",
+    modifiedDays: days,
+    // Unknown age is never "fresh" and never "stale" — it is unknown, and the
+    // UI says so. Sources imported before the date was captured land here.
+    stale: days != null && days > STALE_AFTER_DAYS,
+  };
+}
 
 /**
  * Descriptors in the order a person meets them: the schedule first, because
@@ -24,7 +55,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * `warn` is a sentence, not a flag — whatever raises the header chip has to be
  * able to say why in the same breath.
  */
-export function describeSources(app) {
+export function describeSources(app, today = new Date()) {
   const out = [];
 
   out.push({
@@ -40,6 +71,7 @@ export function describeSources(app) {
         }`
       : "",
     hint: "Concrete Vision · forward-looking, a month of scheduled pours.",
+    ...ageOf(app.schedule.meta?.fileDate, today),
     warn: "",
     warnings: app.schedule.meta?.warnings || [],
     persistWarning: app.schedule.persistWarning,
@@ -59,6 +91,7 @@ export function describeSources(app) {
         }`
       : "",
     hint: "Concrete Vision · every piece with no ticket drawing.",
+    ...ageOf(t.source.fileDate, today),
     // The coverage trap, stated wherever the source is listed.
     warn:
       t.rows.length && app.schedule.rows.length && !app.coverage.ticketsInWindow
@@ -86,6 +119,12 @@ export function describeSources(app) {
         }`
       : "",
     hint: "A different system from Concrete Vision. Cumulative to date, not forward.",
+    // Plants refresh independently, so the card reports the *oldest* file it
+    // holds — a library is only as current as its stalest member.
+    ...ageOf(oldestCostFile(app.costLib.sources), today),
+    // The report's own cut-off, which is a different question from the file's
+    // age and the more authoritative of the two where it exists.
+    asOf: cost.data.asOfRange,
     // Mixing cut-offs is wrong in a way nobody would notice from the totals.
     warn: cost.data.mixedAsOf
       ? `Plants were exported on different dates (${cost.data.asOfRange.min} — ${cost.data.asOfRange.max}); company-wide totals mix those cut-offs.`
@@ -104,6 +143,7 @@ export function describeSources(app) {
     fileName: app.time.meta?.fileName || "",
     detail: app.time.rows.length ? plural(app.time.rows.length, "entry", "entries") : "",
     hint: "Concrete Vision · timesheet hours by person, job and task.",
+    ...ageOf(app.time.meta?.fileDate, today),
     warn: "",
     warnings: app.time.meta?.warnings || [],
     persistWarning: app.time.persistWarning,
@@ -112,22 +152,36 @@ export function describeSources(app) {
   return out;
 }
 
+/** The oldest file in the cost library — the one that dates the whole set. */
+function oldestCostFile(sources) {
+  const dates = (sources || []).map((s) => s.fileDate).filter(Boolean).sort();
+  return dates[0] || "";
+}
+
 /** Everything the header chip needs: a count, and whether to shout. */
-export function sourceSummary(app) {
-  const sources = describeSources(app);
+export function sourceSummary(app, today = new Date()) {
+  const sources = describeSources(app, today);
   const loaded = sources.filter((s) => s.loaded);
   const warnings = [
     ...loaded.filter((s) => s.warn).map((s) => s.warn),
     ...sources.filter((s) => s.persistWarning).map((s) => s.persistWarning),
   ];
+  // Age is a reason to look at the chip too — a file nobody has refreshed in a
+  // fortnight is exactly the thing this was asked to make visible.
+  const stale = loaded.filter((s) => s.stale);
+
   return {
     sources,
     loaded,
+    stale,
     count: loaded.length,
     total: sources.length,
     // Plants are files too, so the chip counts files rather than sources.
     fileCount: loaded.reduce((n, s) => n + (s.id === "cost" ? app.costLib.sources.length : 1), 0),
-    warnings,
-    warn: warnings.length > 0,
+    warnings: [
+      ...warnings,
+      ...stale.map((s) => `${s.label} was last modified ${s.modifiedDays} days ago.`),
+    ],
+    warn: warnings.length > 0 || stale.length > 0,
   };
 }

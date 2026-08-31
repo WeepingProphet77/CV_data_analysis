@@ -32,6 +32,14 @@ Two more pages are addressed but not in the nav: **Sources**, reached from the
 file chip in the header, and the **job page** at `#/job/<job number>` — one
 project across every loaded source, reached by clicking any job number anywhere.
 
+**Sources lists every file with the date it was last modified** and how long ago
+that was, so you can see at a glance how old your copy is and whether it needs
+re-running. Each plant's cost report carries its own date, since they refresh
+independently. Anything older than a fortnight is flagged — a rule of thumb, not
+a policy, and the page says so. Note that a file's modified date is not the same
+as the cost report's own "as of" cut-off, which the report prints inside itself;
+both are shown.
+
 Every tab is a real address, so it can be bookmarked and shared, and the browser
 Back button works the way you expect.
 
