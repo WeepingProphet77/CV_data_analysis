@@ -184,12 +184,58 @@ export function parseJobSheet(aoa, sheetName = "") {
   return { job, costs, quantities, sections, jobTotals, contingency };
 }
 
-/** Derive the plant from the export's filename: "Ashland City Job Cost Report - Active Jobs.xlsx". */
+import { COST_TO_PRODUCTION } from "./plants.js";
+
+/**
+ * Every plant name the app already knows, from the single place that mapping
+ * lives (§13). Used only as a fallback reading of a drifted filename.
+ */
+const KNOWN_PLANTS = Object.keys(COST_TO_PRODUCTION);
+
+/**
+ * Derive the plant from the export's filename.
+ *
+ * **This is the one place in the app where a filename carries meaning**, and it
+ * is unavoidable: the workbook has one worksheet per job and carries no plant
+ * field anywhere (§13). The plant is also the library key, so getting it wrong
+ * does not just mislabel a source — it files the report under a plant nobody
+ * has, instead of replacing the one it should.
+ *
+ * Names drift, because these are downloaded weekly and a re-download arrives as
+ * "... (1).xlsx". So three readings are tried, in order of how much they prove:
+ *
+ *   1. the documented shape, "<Plant> Job Cost Report - Active Jobs.xlsx"
+ *   2. a plant we already know (plants.js) appearing anywhere in the name —
+ *      this is what rescues "Copy of ashland city (1).xlsx"
+ *   3. the filename itself, cleaned up
+ *
+ * It never returns "", because an empty library key would collide with every
+ * other unnamed source and silently overwrite it. Step 3 can still produce a
+ * plant no one recognises; that is visible rather than silent, since an
+ * unmapped plant shows as unmatched against production (`plants.js`).
+ */
 export function plantFromFileName(fileName) {
-  const base = text(fileName).replace(/\.(xlsx?|csv)$/i, "");
+  const base = text(fileName)
+    .replace(/\.(xlsx?|csv)$/i, "")
+    // "(1)", "copy", "copy 2" — what a browser and a Finder duplicate add.
+    .replace(/[\s._-]*\((\d+)\)\s*$/i, "")
+    .replace(/[\s._-]*\bcopy(\s*\d+)?\s*$/i, "")
+    .trim();
+
   const m = base.match(/^(.*?)\s*[-—]?\s*Job\s*Cost\s*Report/i);
   const guess = m ? m[1].trim() : "";
-  return guess || base.trim();
+  if (guess) return guess;
+
+  // A plant we already know, matched on the same normalisation core/parse.js
+  // uses for headers, so "ashland_city" and "Ashland City" are one plant.
+  const flat = (v) => String(v).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const haystack = flat(base);
+  const known = KNOWN_PLANTS.filter((p) => haystack.includes(flat(p)))
+    // Longest first, so a plant whose name contains another's wins.
+    .sort((a, b) => flat(b).length - flat(a).length)[0];
+  if (known) return known;
+
+  return base || text(fileName) || "Unnamed plant";
 }
 
 /**

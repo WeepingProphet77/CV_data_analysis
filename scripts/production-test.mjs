@@ -7,7 +7,8 @@
  *
  *   node scripts/production-test.mjs
  */
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { findExport, headerSignature, describeFound } from "./find-export.mjs";
 import { csvToRecords } from "../src/core/csv.js";
 import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/production/schema.js";
@@ -457,10 +458,21 @@ ok("net movement is signed, so a job that cancels out reads as flat",
 ok("no roll-up figure is NaN",
    mj.every((g) => [g.moved, g.added, g.removed, g.avgAbs, g.net, g.changed].every(Number.isFinite)));
 
-const REAL = "ScheduledProdRptDtl.xls";
-if (existsSync(REAL)) {
-  console.log("\nReal export (local only — gitignored)");
-  const XLSX = await import("xlsx");
+/**
+ * The real exports are found by their columns, not by their names — they are
+ * gitignored and re-downloaded often, so a name is a hint and nothing more.
+ * Naming them exactly used to mean a renamed file skipped every check below
+ * while the run still said all green (see scripts/find-export.mjs).
+ */
+const XLSX = await import("xlsx");
+const schedFound = findExport({
+  hint: /sched.*prod|prod.*rpt/i,
+  identify: headerSignature(XLSX, ["Bed Date", "Bed Name", "Piece Mark", "Plant"]),
+});
+console.log(`\n${describeFound(schedFound, "Real schedule export (local only — gitignored)")}`);
+
+const REAL = schedFound?.file;
+if (REAL) {
   const wb = XLSX.read(readFileSync(REAL), { type: "buffer", cellDates: true, raw: true });
   const recs = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
   const r = build(recs, Object.keys(recs[0]));
@@ -563,10 +575,16 @@ if (existsSync(REAL)) {
  * What IS asserted is the arithmetic that must hold whatever the numbers are —
  * every banner reconciles, the grand total agrees, and no figure is NaN.
  */
-const REAL_TICKETS_FILE = "MissingPieceMarkTicket.xlsx";
-if (existsSync(REAL_TICKETS_FILE)) {
-  console.log("\nReal ticket report (local only — gitignored)");
-  const XLSX = await import("xlsx");
+// "Job Num" + "Drawn By" is the ticket report; the schedule shares "Piece Mark"
+// with it but carries neither.
+const ticketFound = findExport({
+  hint: /missing.*ticket|piece.*mark.*ticket/i,
+  identify: headerSignature(XLSX, ["Plant Name", "Job Num", "Piece Mark", "Drawn By"]),
+});
+console.log(`\n${describeFound(ticketFound, "Real ticket report (local only — gitignored)")}`);
+
+const REAL_TICKETS_FILE = ticketFound?.file;
+if (REAL_TICKETS_FILE) {
   const twb = XLSX.read(readFileSync(REAL_TICKETS_FILE));
   const aoa = XLSX.utils.sheet_to_json(twb.Sheets[twb.SheetNames[0]], {
     header: 1, raw: true, defval: null, blankrows: true,
@@ -597,10 +615,9 @@ if (existsSync(REAL_TICKETS_FILE)) {
   // figure to look at: it is what the planning board will actually flag, and a
   // near-zero here means the two reports were run over different ranges rather
   // than that the drawings are done.
-  if (existsSync(REAL)) {
-    const XL = await import("xlsx");
-    const pwb = XL.read(readFileSync(REAL), { type: "buffer", cellDates: true, raw: true });
-    const precs = XL.utils.sheet_to_json(pwb.Sheets[pwb.SheetNames[0]], { defval: "", raw: true });
+  if (REAL) {
+    const pwb = XLSX.read(readFileSync(REAL), { type: "buffer", cellDates: true, raw: true });
+    const precs = XLSX.utils.sheet_to_json(pwb.Sheets[pwb.SheetNames[0]], { defval: "", raw: true });
     const prod = build(precs, Object.keys(precs[0])).rows;
     const c = ticketCoverage(prod, rt.rows);
     ok("coverage figures are all finite",

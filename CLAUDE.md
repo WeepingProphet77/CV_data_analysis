@@ -44,7 +44,7 @@ Every change in this repo has gone through the same loop. Follow it:
 | Plan vs actual | not built — the export's columns are still a guess. Its scope lives on Home, ready to return as a Production tab (§15) |
 | Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
 | Tests | five suites, all passing — `npm test` |
-| Real data | `ScheduledProdRptDtl.xls`, `MissingPieceMarkTicket.xlsx`, `EmpTimeExport.xls` and `weekly job costs/` are in the working directory, gitignored, and the tests use them when present |
+| Real data | the schedule, ticket, timesheet and `weekly job costs/` exports sit in the working directory, gitignored. The tests find them **by content, not by name** (§7), so a re-download under any name still gets checked |
 | Profiled | all four exports, as of 2026-08-31. Nothing in the app is now fed by a guessed schema |
 
 ### Running it
@@ -96,6 +96,12 @@ shell may not pick that up, so prefix commands with
   (§13).
 - **A missing rate is `null`, not `0`.** A job with no square footage has an
   unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
+- **Never identify an export by its filename.** They are gitignored and
+  re-downloaded constantly, so the names drift (`EmpTimeExport (1).xls`). The
+  suites resolve them by content via `scripts/find-export.mjs`; the app reads
+  whatever is dropped on it and only checks the extension. The single exception
+  is the **job cost plant**, which is unavoidable — the workbook carries no
+  plant field — and `plantFromFileName` is written defensively for it (§13).
 - **The date window is inclusive at both ends, and its boxes default to the
   file's own range** — which is not the month anyone has in mind. An export
   running 2026-01-01 → 2026-09-01 leaves the To box on **September 1**, so
@@ -510,12 +516,24 @@ number parses on essentially every row (the join depends on it), that dashed
 admin numbers survive intact, and that `Location` still tracks the person rather
 than the job.
 
-It finds that export by **pattern, newest first** (`EmpTimeExport*.xls`), not
-by an exact name, and prints which file it used. A re-download landing as
-`EmpTimeExport (1).xls` used to skip the entire real-data block — reconciliation
-included — while the suite still reported all green. A check that vanishes when
-the file is re-downloaded is worse than no check, because nothing says it went
-away.
+It finds that export **by its columns, not by its name** — see
+`scripts/find-export.mjs`, which every suite now uses. A re-download landing as
+`EmpTimeExport (1).xls` used to skip the entire real-data block —
+reconciliation included — while the suite still reported all green. A check
+that vanishes when the file is re-downloaded is worse than no check, because
+nothing announces that it went away.
+
+`findExport({ hint, identify })` ranks the workbooks in the directory (newest
+first, name hints promoted) and then **opens them until one is identified by
+content**. `headerSignature` is the identifier: the columns that make an export
+*that* export — `Bed Date` + `Piece Mark` is the schedule, `Job Num` +
+`Drawn By` is the ticket report, `Effective Date` + `Deptment` is the
+timesheet. A schema's required set is not enough on its own, because
+`core/parse.js` falls back to substring containment and two exports both
+carrying a date and a job name can satisfy each other's schema. Every run
+prints the file it used and says whether the name or the content found it. All
+three real exports resolve correctly when renamed to `aaa.xls`, `bbb.xlsx` and
+`zz-random-name.xls` in one directory — that is the test of it.
 
 It also **reconciles the hours**, the same way the job cost and ticket walkers
 reconcile their totals: the sheet's own `Hours` column must sum to the parsed
@@ -1434,6 +1452,15 @@ a fourth. `core/library.js` (`useLibrary`) keeps **one entry per source, keyed
 by plant**; re-importing a plant overwrites just that entry.
 
 - The plant comes from the **filename** — the worksheets carry no plant field.
+  This is the one place in the app where a filename carries meaning, and the
+  plant is also the library key, so a misread does not merely mislabel a
+  source: it files the report under a plant nobody has instead of replacing the
+  one it should. `plantFromFileName` therefore tries three readings in order —
+  the documented `"<Plant> Job Cost Report - Active Jobs.xlsx"` shape, then any
+  plant already in `plants.js` appearing anywhere in the name (which rescues
+  `"Copy of ashland city (1).xlsx"`), then the cleaned filename. `(1)` and
+  `copy` suffixes are stripped first. It never returns `""` — an empty key
+  would collide with every other unnamed source and silently overwrite it.
 - The whole library is one IndexedDB value, so an import is atomic.
 - It is created in `app/AppData.jsx` like every other record, because Projects
   and the job page read it too (§15). It is still `useLibrary`, still one entry

@@ -4,7 +4,8 @@
  *
  *   node scripts/smoke-test.mjs
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { findExport, headerSignature, describeFound } from "./find-export.mjs";
 import { csvToRecords, parseCsv } from "../src/core/csv.js";
 import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import { rollup, cumulativeSeries, dateDomain, topNWithOther, sumBy, distinct } from "../src/core/aggregate.js";
@@ -289,27 +290,20 @@ ok("degenerate range is safe", niceTicks(0, 0).ticks.length >= 2);
  * the export contains.
  */
 /**
- * Find the timesheet export, whatever the browser called it.
- *
- * It used to be the literal string "EmpTimeExport.xls", which meant a second
- * download landing as "EmpTimeExport (1).xls" silently skipped this whole
- * block — every real-data check below, reconciliation included, quietly
- * stopped running while the suite still reported all green. A check that
- * disappears when the file is re-downloaded is worse than no check, because
- * nothing says it went away. Newest match wins, and the name is printed.
+ * The timesheet export, identified by its columns rather than by its name — it
+ * is re-downloaded often and arrives as "EmpTimeExport (1).xls" and worse.
+ * "Effective Date" + "Labor Task" + "Deptment" is this export and no other
+ * (that misspelling is Concrete Vision's own, §12).
  */
-function findTimeExport() {
-  const found = readdirSync(".")
-    .filter((f) => /^EmpTimeExport.*\.xlsx?$/i.test(f))
-    .map((f) => ({ f, mtime: statSync(f).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime);
-  return found.length ? found[0].f : null;
-}
+const XLSX = await import("xlsx");
+const timeFound = findExport({
+  hint: /emp.*time|time.*export/i,
+  identify: headerSignature(XLSX, ["Effective Date", "Labor Task", "Deptment", "Hours"]),
+});
+console.log(`\n${describeFound(timeFound, "Real employee time export")}`);
 
-const TIME_EXPORT = findTimeExport();
-if (TIME_EXPORT && existsSync(TIME_EXPORT)) {
-  console.log(`\nReal employee time export — ${TIME_EXPORT}`);
-  const XLSX = await import("xlsx");
+if (timeFound) {
+  const TIME_EXPORT = timeFound.file;
   const wb = XLSX.read(readFileSync(TIME_EXPORT), { type: "buffer" });
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],
     { header: 1, raw: true, defval: null, blankrows: false });

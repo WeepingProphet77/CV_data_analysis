@@ -96,7 +96,9 @@ export function SourceDrop({ onSource, compact }) {
       <p className="hint" style={{ marginTop: 14 }}>
         <strong style={{ color: "var(--text-secondary)" }}>Expected shape:</strong>{" "}
         one worksheet per job, the job number and name in cell A3, and a Task / Description
-        header row. The plant is taken from the filename.
+        header row. The plant is read from the filename — the workbook carries no plant
+        field — so a "(1)" or "copy" suffix is fine, but a file renamed past recognition
+        is filed under that name instead of its plant.
       </p>
       <p className="hint">
         Files are parsed in your browser and cached in this browser only. Nothing is uploaded anywhere.

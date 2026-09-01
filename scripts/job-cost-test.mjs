@@ -64,6 +64,23 @@ eq("titleless job degrades to all number", splitJobTitle("91750"), { number: "91
 console.log("\nPlant naming");
 eq("plant from filename", plantFromFileName("Ashland City Job Cost Report - Active Jobs.xlsx"), "Ashland City");
 eq("plant from a bare filename", plantFromFileName("Kissimmee.xlsx"), "Kissimmee");
+
+// These reports are re-downloaded weekly, so the name drifts. The plant is the
+// library key -- a name it cannot read files the report under a plant nobody
+// has, instead of replacing the one it should.
+eq("a re-download keeps its plant",
+   plantFromFileName("Ashland City Job Cost Report - Active Jobs (1).xlsx"), "Ashland City");
+eq("a duplicated file keeps its plant",
+   plantFromFileName("Monroeville copy 2.xls"), "Monroeville");
+eq("a known plant is found anywhere in the name",
+   plantFromFileName("Copy of ashland city (1).xlsx"), "Ashland City");
+// CV splits Hillsboro; the cost system bills one, so both read as Hillsboro (§13).
+eq("a CV plant name still keys to its cost plant",
+   plantFromFileName("hillsboro_structural.xlsx"), "Hillsboro");
+// Never "": an empty library key would silently overwrite another source.
+ok("an unreadable name still yields a key", plantFromFileName("") === "Unnamed plant");
+eq("an unrecognised name is kept verbatim rather than guessed",
+   plantFromFileName("weird-thing.xlsx"), "weird-thing");
 eq("CV structural plant rolls up", costPlantFor("Hillsboro Structural"), "Hillsboro");
 eq("cost plant covers both CV plants", productionPlantsFor("Hillsboro"), ["Hillsboro", "Hillsboro Structural"]);
 eq("unmapped CV plant returns itself", costPlantFor("Pearland"), "Pearland");
