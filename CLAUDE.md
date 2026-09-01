@@ -96,6 +96,11 @@ shell may not pick that up, so prefix commands with
   (§13).
 - **A missing rate is `null`, not `0`.** A job with no square footage has an
   unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
+- **Short-looking totals are a scope question before they are a bug.** The
+  order to check: the My Projects switch in the header, the date window (both
+  boxes), then Location/Department. `ScopeNotice` states all three on Time.
+  Ingest has been reconciled per person against the sheet since 2026-09-01 and
+  loses nothing (§7).
 - **A workbook can have more than one sheet, and the parser reads all the
   matching ones** (§4). If hours or quantities ever look short, the ingest
   summary at the top of the page is the first thing to read — it states rows
@@ -1740,6 +1745,21 @@ filter and made it vanish on the third (§15).
   whenever a file is removed. Each module reports how many of the selections it
   cannot currently show, in its own words: job cost says the plant's report may
   not be imported, production says nothing is scheduled for them.
+- **A scoped pool states itself, above the figures**
+  (`components/ScopeNotice.jsx`, on Time). §14 guarded against showing
+  company-wide numbers under a "My Projects" heading; the opposite failure is
+  the one that bit. On 2026-09-01 the owner read one employee's August as short
+  and reported the app was losing hours: the page showed 1,538.6 hours where
+  the export holds 16,423.9 for that month, across 8 of 130 jobs, with nothing
+  on screen saying eight starred jobs were narrowing it. The switch is in the
+  header (§15), which is easy to miss from a page of numbers, and a stat tile
+  cannot carry the caveat — the number is the whole point of it. The notice
+  names the scope, the window and any dimension filter, and offers the way
+  out. It renders nothing when nothing is narrowing.
+- **A person's hours are spread across *many* jobs, admin included**, so any
+  job-scoped view shows them short *correctly*. The case that prompted this:
+  168 hours in August across **9** job numbers, 48 of them on `00-001`. That
+  is not an under-count, and the notice is what makes the difference legible.
 - `scope: "mine"` with an empty list is a dead end, so `active` is false until
   something is starred, and a module shows `NoProjectsYet` rather than a blank
   dashboard. `clearMembers` returns the scope to All for the same reason.

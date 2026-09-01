@@ -15,6 +15,7 @@ import { ImportPrompt, ImportButton } from "../../components/FileImport.jsx";
 import { RemoveButton } from "../../components/SourceStrip.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
 import IngestSummary from "../../components/IngestSummary.jsx";
+import ScopeNotice from "../../components/ScopeNotice.jsx";
 import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
@@ -135,6 +136,17 @@ export default function TimeModule({ tab, route }) {
         search={searchable ? search : undefined}
         onSearch={searchable ? setSearch : undefined}
         searchPlaceholder={tab === "people" ? "Search people…" : "Search jobs…"}
+      />
+
+      <ScopeNotice
+        mine={mine}
+        dateFrom={f.dateFrom} dateTo={f.dateTo} range={f.range}
+        dimensions={[
+          { label: "Location", value: f.loc },
+          { label: "Department", value: f.dept },
+        ]}
+        dirty={f.dirty}
+        onClear={f.clear}
       />
 
       {mine.scope !== SCOPE_ALL && !mine.count ? (

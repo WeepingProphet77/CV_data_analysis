@@ -36,6 +36,7 @@ import { ticketSheet } from "./production-ticket-sample.mjs";
 import ProdMovement from "../src/modules/production/views/Movement.jsx";
 import BaselineBar from "../src/modules/production/views/BaselineBar.jsx";
 import IngestSummary from "../src/components/IngestSummary.jsx";
+import ScopeNotice from "../src/components/ScopeNotice.jsx";
 import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
 import CostModule from "../src/modules/job-cost/index.jsx";
 import TimeModule from "../src/modules/employee-time/index.jsx";
@@ -361,6 +362,16 @@ const cases = [
                           sheetsSkipped: [{ name: "Page 2", why: "no Hours column" }] }} />],
   // An import saved before these fields existed must say nothing rather than
   // claim a completeness it cannot show.
+  // A scoped pool must announce itself; an unscoped one must stay silent.
+  ["ScopeNotice, My Projects active",
+   <ScopeNotice mine={{ active: true, count: 8, setScope: noop }} range={{ min: "", max: "" }} dimensions={[]} />],
+  ["ScopeNotice, a date window and a dimension",
+   <ScopeNotice mine={{ active: false, count: 0, setScope: noop }} dateFrom="2026-08-01" dateTo="2026-08-31"
+                range={{ min: "2026-01-01", max: "2026-09-01" }}
+                dimensions={[{ label: "Location", value: "MDS" }, { label: "Department", value: "All" }]} />],
+  ["ScopeNotice, nothing narrowing",
+   <ScopeNotice mine={{ active: false, count: 0, setScope: noop }} range={{ min: "2026-01-01", max: "2026-09-01" }}
+                dimensions={[{ label: "Location", value: "All" }]} />, { allowEmpty: true }],
   ["IngestSummary, meta from an older import",
    <IngestSummary meta={{ fileName: "old.xls" }} />, { allowEmpty: true }],
   ["Prod / PieceDetail moved", <PieceDetail piece={prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0]} siblings={[]} move={prodDiff.byRow.get(prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0])} onClose={noop} onSelect={noop} />],
