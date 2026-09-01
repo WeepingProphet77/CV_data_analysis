@@ -4,7 +4,7 @@
  *
  *   node scripts/smoke-test.mjs
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { csvToRecords, parseCsv } from "../src/core/csv.js";
 import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import { rollup, cumulativeSeries, dateDomain, topNWithOther, sumBy, distinct } from "../src/core/aggregate.js";
@@ -288,9 +288,27 @@ ok("degenerate range is safe", niceTicks(0, 0).ticks.length >= 2);
  * between pulls; what is asserted are the invariants that must hold whatever
  * the export contains.
  */
-const TIME_EXPORT = "EmpTimeExport.xls";
-if (existsSync(TIME_EXPORT)) {
-  console.log("\nReal employee time export");
+/**
+ * Find the timesheet export, whatever the browser called it.
+ *
+ * It used to be the literal string "EmpTimeExport.xls", which meant a second
+ * download landing as "EmpTimeExport (1).xls" silently skipped this whole
+ * block — every real-data check below, reconciliation included, quietly
+ * stopped running while the suite still reported all green. A check that
+ * disappears when the file is re-downloaded is worse than no check, because
+ * nothing says it went away. Newest match wins, and the name is printed.
+ */
+function findTimeExport() {
+  const found = readdirSync(".")
+    .filter((f) => /^EmpTimeExport.*\.xlsx?$/i.test(f))
+    .map((f) => ({ f, mtime: statSync(f).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  return found.length ? found[0].f : null;
+}
+
+const TIME_EXPORT = findTimeExport();
+if (TIME_EXPORT && existsSync(TIME_EXPORT)) {
+  console.log(`\nReal employee time export — ${TIME_EXPORT}`);
   const XLSX = await import("xlsx");
   const wb = XLSX.read(readFileSync(TIME_EXPORT), { type: "buffer" });
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],

@@ -96,6 +96,11 @@ shell may not pick that up, so prefix commands with
   (§13).
 - **A missing rate is `null`, not `0`.** A job with no square footage has an
   unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
+- **The date window is inclusive at both ends, and its boxes default to the
+  file's own range** — which is not the month anyone has in mind. An export
+  running 2026-01-01 → 2026-09-01 leaves the To box on **September 1**, so
+  setting only *From* to Aug 1 quietly adds that day's hours to "August". Ask
+  what both boxes say before believing a monthly figure is wrong (§12).
 - **A total row shows variance.** Every table that has the column totals it.
 - **Three different dates, never conflated.** `fileDate` is the file's mtime
   ("how old is my copy"), the job cost report's `asOf` is the report's own
@@ -504,6 +509,13 @@ it asserts the schema absorbs every header with none left unmapped, that the job
 number parses on essentially every row (the join depends on it), that dashed
 admin numbers survive intact, and that `Location` still tracks the person rather
 than the job.
+
+It finds that export by **pattern, newest first** (`EmpTimeExport*.xls`), not
+by an exact name, and prints which file it used. A re-download landing as
+`EmpTimeExport (1).xls` used to skip the entire real-data block — reconciliation
+included — while the suite still reported all green. A check that vanishes when
+the file is re-downloaded is worse than no check, because nothing says it went
+away.
 
 It also **reconciles the hours**, the same way the job cost and ticket walkers
 reconcile their totals: the sheet's own `Hours` column must sum to the parsed
@@ -1225,8 +1237,10 @@ production, a zero here would carry no information.
 ### The job number, and why this export joins
 
 **Hours are reconciled against the sheet, per person, on every test run** —
-see §7. As of 2026-09-01 the parse loses nothing: 29,267 rows in, 29,267 out,
-124,035.04 hours, 110 people, none short. So a report that "Time isn't counting
+see §7. As of 2026-09-01 the parse loses nothing: 29,510 rows in, 29,510 out,
+124,692 hours, 110 people, none short. Spot-checked end to end against a figure
+the owner supplied: one person's August 2026 total is 168.00 across 21 weekday
+rows at 8h, and the filter-plus-grouping path reproduces it exactly. So a report that "Time isn't counting
 all of somebody's hours" is not an ingest bug until that check fails; look at
 the My Projects scope in the header, the date/location/department filters, and
 the entry count in the page subtitle first.
