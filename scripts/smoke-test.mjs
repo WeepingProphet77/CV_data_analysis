@@ -323,6 +323,40 @@ if (existsSync(TIME_EXPORT)) {
   const hours = real.reduce((a, r) => a + r.hrs, 0);
   const dates = real.map((r) => r.date).filter(Boolean).sort();
 
+  /**
+   * **No hour is lost between the sheet and the rows the app aggregates.**
+   *
+   * Every per-person figure in Time is `groupBy(name)` + `sumBy(hrs)` over
+   * these rows, so if the sheet's own Hours column sums to the parsed total —
+   * overall and for each person — then no view can be under-counting anybody;
+   * a short figure on screen is a filter or the My Projects scope, not ingest.
+   * That is the same reconciliation the job cost and ticket walkers get (§7),
+   * and it was missing here: the suite counted rows and asserted no NaN, which
+   * cannot tell a dropped row from an absent one.
+   *
+   * `isEmptyRow` drops a zero-hour row, which contributes nothing to a sum, so
+   * dropping rows and conserving hours are not the same claim — both are made.
+   */
+  const sheetHours = aoa.slice(1).reduce((a, r) => a + toNumber(r?.[at.hrs]), 0);
+  eq("every hour on the sheet reaches the rows", +hours.toFixed(4), +sheetHours.toFixed(4));
+
+  const sheetByPerson = new Map();
+  for (const r of aoa.slice(1)) {
+    if (!r) continue;
+    const name = `${String(r[at.firstName] ?? "").trim()} ${String(r[at.lastName] ?? "").trim()}`.trim();
+    if (!name) continue;
+    sheetByPerson.set(name, (sheetByPerson.get(name) || 0) + toNumber(r[at.hrs]));
+  }
+  const parsedByPerson = new Map();
+  for (const r of real) parsedByPerson.set(r.name, (parsedByPerson.get(r.name) || 0) + r.hrs);
+
+  // A person split across two spellings would show here as two short rows
+  // rather than one whole one -- the failure this check is really looking for.
+  const short = [...sheetByPerson].filter(([n, h]) => Math.abs((parsedByPerson.get(n) || 0) - h) > 0.0001);
+  ok("no person's hours are short of the sheet's own total", short.length === 0,
+     short.slice(0, 3).map(([n, h]) => `${n}: sheet ${h.toFixed(1)}, parsed ${(parsedByPerson.get(n) || 0).toFixed(1)}`).join("; "));
+  eq("every person on the sheet survives ingest", parsedByPerson.size, sheetByPerson.size);
+
   console.log(`       ${real.length} rows, ${dates[0]} -> ${dates[dates.length - 1]}`);
   console.log(`       ${people.size} people, ${jobNos.size} job numbers, ${hours.toFixed(0)} hours`);
   console.log(`       job number parsed on ${((withNo.length / real.length) * 100).toFixed(1)}% of rows`);

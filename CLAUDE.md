@@ -503,7 +503,18 @@ npm run test:render     # server-renders every view against the sample data
 it asserts the schema absorbs every header with none left unmapped, that the job
 number parses on essentially every row (the join depends on it), that dashed
 admin numbers survive intact, and that `Location` still tracks the person rather
-than the job. The counts it prints — rows, people, job numbers, hours, the
+than the job.
+
+It also **reconciles the hours**, the same way the job cost and ticket walkers
+reconcile their totals: the sheet's own `Hours` column must sum to the parsed
+total, *and* to the same figure person by person, with every person surviving
+ingest. That is the check that answers "is Time under-counting somebody?"
+mechanically — every per-person figure in the section is `groupBy(name)` +
+`sumBy(hrs)` over these rows, so if the sums agree, a short number on screen is
+a filter or the My Projects scope rather than ingest. Counting rows and
+asserting no `NaN`, which is all this did before, cannot tell a dropped row from
+an absent one. Note the two claims are separate: `isEmptyRow` drops zero-hour
+rows, which conserve a sum by definition. The counts it prints — rows, people, job numbers, hours, the
 admin share — move between pulls and are printed rather than asserted.
 
 `test:production` also runs against the **real** `ScheduledProdRptDtl.xls` and
@@ -1212,6 +1223,13 @@ contains no zero-hour rows, so nothing is actually dropped — but unlike
 production, a zero here would carry no information.
 
 ### The job number, and why this export joins
+
+**Hours are reconciled against the sheet, per person, on every test run** —
+see §7. As of 2026-09-01 the parse loses nothing: 29,267 rows in, 29,267 out,
+124,035.04 hours, 110 people, none short. So a report that "Time isn't counting
+all of somebody's hours" is not an ingest bug until that check fails; look at
+the My Projects scope in the header, the date/location/department filters, and
+the entry count in the page subtitle first.
 
 **`Job Name` parses to a job number on 100.0% of rows** (29,262 of 29,267; the 5
 that fail carry a title with no number at all, and keep `jobNo: ""`). It is the
