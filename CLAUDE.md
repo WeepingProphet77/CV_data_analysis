@@ -96,6 +96,10 @@ shell may not pick that up, so prefix commands with
   (§13).
 - **A missing rate is `null`, not `0`.** A job with no square footage has an
   unknown $/SF, and a zero would read as "costs nothing per foot" (§13).
+- **A workbook can have more than one sheet, and the parser reads all the
+  matching ones** (§4). If hours or quantities ever look short, the ingest
+  summary at the top of the page is the first thing to read — it states rows
+  kept against rows offered and names any sheet it skipped.
 - **Never identify an export by its filename.** They are gitignored and
   re-downloaded constantly, so the names drift (`EmpTimeExport (1).xls`). The
   suites resolve them by content via `scripts/find-export.mjs`; the app reads
@@ -391,6 +395,22 @@ Most work is this. The shape that has held up:
 
 `core/parse.js` → `parseFile(file, schema)` → `{ rows, meta }`.
 
+- **Every sheet whose columns satisfy the schema is read, not just the first.**
+  `parseFile` used to take `SheetNames[0]` and mention the rest in a note behind
+  a collapsed disclosure, so a workbook paginated across sheets silently lost
+  everything after the first — and the totals still looked plausible, which is
+  what makes that shape of bug expensive. Sheets are chosen by *content*: a
+  second page carries the same header row, a "Parameters" or "Notes" tab does
+  not and is **named in a warning** rather than read as data. Every skipped
+  sheet is stated; silence is what let this hide.
+- **The import states what it took in**, via `components/IngestSummary.jsx` on
+  Time and Production: rows kept out of rows offered, from how many sheets. It
+  is a quiet hint when everything was read and an amber notice when it was not
+  — "did it count all of it?" must be answerable from the page, not only from a
+  test script. `meta` carries `recordsRead`, `dropped`, `sheetsRead` and
+  `sheetsSkipped` for it. An older saved import has none of those and the
+  component renders **nothing**, rather than claiming a completeness it cannot
+  show.
 - `.csv` goes through `core/csv.js`. `.xlsx`/`.xls` **dynamically import**
   SheetJS, so the ~500KB parser is a separate chunk that a CSV user never
   downloads. Keep it that way: never add a top-level `import * as XLSX` —

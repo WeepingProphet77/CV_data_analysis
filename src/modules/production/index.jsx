@@ -20,6 +20,7 @@ import { sumBy } from "../../core/aggregate.js";
 import { PageHeader, RouteTabs } from "../../components/Page.jsx";
 import { ImportButton, ImportPrompt } from "../../components/FileImport.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
+import IngestSummary from "../../components/IngestSummary.jsx";
 import { SourceStrip, SourceRow, RemoveButton } from "../../components/SourceStrip.jsx";
 import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
@@ -100,6 +101,8 @@ export default function ProductionModule({ tab }) {
       />
 
       {app.schedule.persistWarning && <div className="notice amber">{app.schedule.persistWarning}</div>}
+
+      <IngestSummary meta={app.schedule.meta} />
 
       {app.schedule.meta?.warnings?.length > 0 && (
         <details style={{ marginBottom: 12, fontSize: 11 }}>

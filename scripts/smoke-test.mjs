@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { findExport, headerSignature, describeFound } from "./find-export.mjs";
 import { csvToRecords, parseCsv } from "../src/core/csv.js";
-import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
+import { mapColumns, toIsoDate, toNumber, parseFile } from "../src/core/parse.js";
 import { rollup, cumulativeSeries, dateDomain, topNWithOther, sumBy, distinct } from "../src/core/aggregate.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { niceTicks } from "../src/components/charts/scale.js";
@@ -289,6 +289,74 @@ ok("degenerate range is safe", niceTicks(0, 0).ticks.length >= 2);
  * between pulls; what is asserted are the invariants that must hold whatever
  * the export contains.
  */
+/**
+ * Multi-sheet ingest.
+ *
+ * parseFile used to read `SheetNames[0]` and mention the rest in a note behind
+ * a collapsed disclosure, so a workbook paginated across sheets silently lost
+ * everything after the first — and the totals still looked plausible, which is
+ * what makes that shape of bug so expensive. It now reads every sheet whose
+ * columns satisfy the schema, and states any sheet it did not read.
+ *
+ * Built in memory: a real export must never enter the repo (§1).
+ */
+console.log("\nMulti-sheet ingest");
+{
+  const XL = await import("xlsx");
+  const header = ["Effective Date", "First Name", "Last Name", "Job Name", "Hours"];
+  const page = (who, hrs) => [["2026-08-03", who, "Tester", "45000 - A JOB", hrs]];
+
+  const book = (sheets) => {
+    const wb = XL.utils.book_new();
+    for (const [name, aoa] of sheets) XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet(aoa), name);
+    const buf = XL.write(wb, { type: "array", bookType: "xlsx" });
+    return new File([buf], "paginated.xlsx", { lastModified: Date.parse("2026-09-01") });
+  };
+
+  // Two pages of the same export, plus a tab that is not data at all.
+  const three = await parseFile(book([
+    ["Page 1", [header, ...page("Ann", 8)]],
+    ["Page 2", [header, ...page("Bo", 7)]],
+    ["Parameters", [["Report", "Employee Time"], ["Run by", "someone"]]],
+  ]), schema);
+
+  eq("every matching sheet is read", three.rows.length, 2);
+  eq("hours from both sheets are kept", sumBy(three.rows, (r) => r.hrs), 15);
+  eq("the people from both sheets are kept",
+     three.rows.map((r) => r.name).sort(), ["Ann Tester", "Bo Tester"]);
+  eq("each sheet's contribution is recorded",
+     three.meta.sheetsRead.map((x) => `${x.name}:${x.rows}`), ["Page 1:1", "Page 2:1"]);
+  eq("the non-data sheet is named as skipped",
+     three.meta.sheetsSkipped.map((x) => x.name), ["Parameters"]);
+  ok("and skipping it is stated in the warnings",
+     three.meta.warnings.some((w) => w.includes("Parameters") && w.includes("not read")),
+     three.meta.warnings.join(" | "));
+  eq("records read is what the sheets offered", three.meta.recordsRead, 2);
+
+  // The ordinary single-sheet case must be untouched by all of that.
+  const one = await parseFile(book([["Sheet1", [header, ...page("Ann", 8)]]]), schema);
+  eq("a single sheet still parses", one.rows.length, 1);
+  eq("and reports no skipped sheets", one.meta.sheetsSkipped, []);
+  ok("and says nothing about sheets in its warnings",
+     !one.meta.warnings.some((w) => w.toLowerCase().includes("sheet")), one.meta.warnings.join(" | "));
+
+  // A workbook with no usable sheet must fail loudly, naming real columns.
+  // The sheet carries a header row AND a data row, so this is "wrong columns"
+  // rather than "no rows" -- two different messages, and this is the first.
+  let threw = "";
+  try { await parseFile(book([["Parameters", [["Report", "Run by"], ["Employee Time", "someone"]]]]), schema); }
+  catch (err) { threw = err.message; }
+  ok("a workbook with no matching sheet is rejected", threw.includes("missing required column"), threw.slice(0, 80));
+  ok("and the message lists columns that are really there", threw.includes("Report"), threw.slice(0, 120));
+
+  // ... and a genuinely empty workbook gets the other message.
+  let threwEmpty = "";
+  try { await parseFile(book([["Sheet1", [["Report", "Run by"]]]]), schema); }
+  catch (err) { threwEmpty = err.message; }
+  ok("a workbook with no data rows says so instead",
+     threwEmpty.includes("No data rows found"), threwEmpty.slice(0, 80));
+}
+
 /**
  * The timesheet export, identified by its columns rather than by its name — it
  * is re-downloaded often and arrives as "EmpTimeExport (1).xls" and worse.

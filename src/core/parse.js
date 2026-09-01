@@ -68,28 +68,34 @@ const toText = (v) => (v == null ? "" : String(v).trim());
 const isExcel = (name) => /\.(xlsx|xlsm|xlsb|xls)$/i.test(name);
 
 /**
- * Read a File into { records, headers, sheetName, sheetNames }.
+ * Read a File into { sheets, sheetNames }, one entry per worksheet.
  *
- * CSV goes through the local reader. Excel pulls in SheetJS on demand, so the
- * initial page load never pays for a parser most imports don't need.
+ * **Every sheet is returned, not just the first.** This used to take
+ * `SheetNames[0]` and mention the rest in a note nobody reads, which meant a
+ * workbook paginated across sheets silently lost everything after the first —
+ * the worst shape of bug this app can have, because the totals still look
+ * plausible. Which sheets actually carry data is decided in `parseFile`, by
+ * whether their columns satisfy the schema.
+ *
+ * CSV goes through the local reader as a single unnamed sheet. Excel pulls in
+ * SheetJS on demand, so the initial page load never pays for a parser most
+ * imports don't need.
  */
 async function readRecords(file) {
   if (!isExcel(file.name)) {
     const { headers, records } = csvToRecords(await file.text());
-    return { records, headers, sheetName: null, sheetNames: [] };
+    return { sheets: [{ name: null, records, headers }], sheetNames: [] };
   }
 
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true, raw: true });
   if (!wb.SheetNames.length) throw new Error(`${file.name} contains no sheets.`);
-  const sheetName = wb.SheetNames[0];
-  const records = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: "", raw: true });
-  return {
-    records,
-    headers: records.length ? Object.keys(records[0]) : [],
-    sheetName,
-    sheetNames: wb.SheetNames,
-  };
+
+  const sheets = wb.SheetNames.map((name) => {
+    const records = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "", raw: true });
+    return { name, records, headers: records.length ? Object.keys(records[0]) : [] };
+  });
+  return { sheets, sheetNames: wb.SheetNames };
 }
 
 /* -- Column mapping ----------------------------------------------------- */
@@ -148,50 +154,84 @@ export function isoFromMtime(ms) {
 }
 
 export async function parseFile(file, schema) {
-  const { records, headers, sheetName, sheetNames } = await readRecords(file);
-
-  if (!records.length) throw new Error(`No data rows found in "${file.name}".`);
-
-  const { mapping, missing, unmapped } = mapColumns(headers, schema);
-
-  if (missing.length) {
-    throw new Error(
-      `"${file.name}" is missing required column(s): ${missing
-        .map((f) => f.label)
-        .join(", ")}.\n\nColumns found: ${headers.join(", ")}`
-    );
-  }
+  const { sheets, sheetNames } = await readRecords(file);
 
   const coerce = { date: toIsoDate, number: toNumber, string: toText };
   const warnings = [];
-  let dropped = 0;
+
+  /**
+   * A sheet is used when its columns satisfy the schema. That test, rather than
+   * position, is what decides: a workbook paginated across sheets has the same
+   * header row on each, while a stray "Notes" or "Parameters" tab does not and
+   * is reported instead of being read as data.
+   */
+  const used = [];
+  const skipped = [];
+  for (const sheet of sheets) {
+    if (!sheet.records.length) { skipped.push({ ...sheet, why: "no rows" }); continue; }
+    const cols = mapColumns(sheet.headers, schema);
+    if (cols.missing.length) {
+      skipped.push({ ...sheet, why: `no ${cols.missing.map((f) => f.label).join(", ")} column` });
+      continue;
+    }
+    used.push({ ...sheet, ...cols });
+  }
+
+  if (!used.length) {
+    // Report against the sheet that came closest, so the message names the
+    // columns someone actually has rather than the first tab in the book.
+    const best = sheets.filter((x) => x.headers.length)
+      .sort((a, b) => b.headers.length - a.headers.length)[0] || sheets[0] || { headers: [] };
+    const { missing } = mapColumns(best.headers, schema);
+    if (!best.headers.length) throw new Error(`No data rows found in "${file.name}".`);
+    throw new Error(
+      `"${file.name}" is missing required column(s): ${missing.map((f) => f.label).join(", ")}.` +
+      `\n\nColumns found: ${best.headers.join(", ")}`
+    );
+  }
 
   const rows = [];
-  for (const rec of records) {
-    const row = {};
-    for (const field of schema.fields) {
-      const header = mapping[field.key];
-      const raw = header == null ? undefined : rec[header];
-      row[field.key] = (coerce[field.type] || toText)(raw);
-    }
+  let dropped = 0;
+  let recordsRead = 0;
+  const perSheet = [];
 
-    // Carry any column the schema doesn't name through under `extra`, keyed by
-    // its original header. Without this a column Concrete Vision adds later is
-    // silently discarded at import and can never be shown. Only non-empty
-    // values are kept, so an always-blank column costs nothing.
-    if (unmapped.length) {
-      const extra = {};
-      for (const header of unmapped) {
-        const v = toText(rec[header]);
-        if (v !== "") extra[header] = v;
+  for (const { name, records, mapping, unmapped } of used) {
+    const before = rows.length;
+    recordsRead += records.length;
+
+    for (const rec of records) {
+      const row = {};
+      for (const field of schema.fields) {
+        const header = mapping[field.key];
+        const raw = header == null ? undefined : rec[header];
+        row[field.key] = (coerce[field.type] || toText)(raw);
       }
-      if (Object.keys(extra).length) row.extra = extra;
-    }
 
-    if (schema.derive) Object.assign(row, schema.derive(row, rec));
-    if (schema.isEmptyRow?.(row)) { dropped++; continue; }
-    rows.push(row);
+      // Carry any column the schema doesn't name through under `extra`, keyed by
+      // its original header. Without this a column Concrete Vision adds later is
+      // silently discarded at import and can never be shown. Only non-empty
+      // values are kept, so an always-blank column costs nothing.
+      if (unmapped.length) {
+        const extra = {};
+        for (const header of unmapped) {
+          const v = toText(rec[header]);
+          if (v !== "") extra[header] = v;
+        }
+        if (Object.keys(extra).length) row.extra = extra;
+      }
+
+      if (schema.derive) Object.assign(row, schema.derive(row, rec));
+      if (schema.isEmptyRow?.(row)) { dropped++; continue; }
+      rows.push(row);
+    }
+    perSheet.push({ name, records: records.length, rows: rows.length - before });
   }
+
+  // Mappings can differ between sheets only if their headers do; report the
+  // union so "which columns were used" stays answerable for the whole import.
+  const headers = [...new Set(used.flatMap((u) => u.headers))];
+  const mapping = Object.assign({}, ...used.map((u) => u.mapping));
+  const unmapped = [...new Set(used.flatMap((u) => u.unmapped))];
 
   if (dropped) warnings.push(`${dropped} blank or zero row(s) skipped.`);
   if (unmapped.length) {
@@ -202,8 +242,17 @@ export async function parseFile(file, schema) {
                : " — empty in every row.")
     );
   }
-  if (sheetNames.length > 1)
-    warnings.push(`Read sheet "${sheetName}" of ${sheetNames.length} in the workbook.`);
+  if (used.length > 1) {
+    warnings.push(
+      `Read all ${used.length} matching sheets: ` +
+      perSheet.map((p) => `"${p.name}" (${p.rows.toLocaleString()} rows)`).join(", ") + "."
+    );
+  }
+  // A skipped sheet is stated outright. Silence here is how a paginated export
+  // loses half its rows while every total still looks plausible.
+  for (const sk of skipped) {
+    warnings.push(`Sheet "${sk.name}" was not read — ${sk.why}.`);
+  }
 
   return {
     rows,
@@ -212,7 +261,14 @@ export async function parseFile(file, schema) {
       fileDate: isoFromMtime(file.lastModified),
       importedAt: new Date().toISOString(),
       rowCount: rows.length,
-      sheetName,
+      // What the file offered, so the UI can state ingest completeness rather
+      // than leaving "did it read all of it?" to be taken on trust.
+      recordsRead,
+      dropped,
+      sheetName: used[0].name,
+      sheetsRead: perSheet,
+      sheetsSkipped: skipped.map((sk) => ({ name: sk.name, why: sk.why })),
+      sheetCount: sheetNames.length,
       headers,
       mapping,
       warnings,

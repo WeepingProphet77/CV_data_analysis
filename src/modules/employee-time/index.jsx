@@ -14,6 +14,7 @@ import { PageHeader, RouteTabs } from "../../components/Page.jsx";
 import { ImportPrompt, ImportButton } from "../../components/FileImport.jsx";
 import { RemoveButton } from "../../components/SourceStrip.jsx";
 import { FilterBar } from "../../components/Filters.jsx";
+import IngestSummary from "../../components/IngestSummary.jsx";
 import { NoProjectsYet } from "../../components/MyProjects.jsx";
 import { SCOPE_ALL } from "../../core/myProjects.js";
 import { VERBS } from "../../app/sources.js";
@@ -100,6 +101,8 @@ export default function TimeModule({ tab, route }) {
       />
 
       {data.persistWarning && <div className="notice amber">{data.persistWarning}</div>}
+
+      <IngestSummary meta={data.meta} />
 
       {data.meta?.warnings?.length > 0 && (
         <details style={{ marginBottom: 12, fontSize: 11 }}>

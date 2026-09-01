@@ -35,6 +35,7 @@ import { ticketIndex, ticketCoverage } from "../src/modules/production/tickets.j
 import { ticketSheet } from "./production-ticket-sample.mjs";
 import ProdMovement from "../src/modules/production/views/Movement.jsx";
 import BaselineBar from "../src/modules/production/views/BaselineBar.jsx";
+import IngestSummary from "../src/components/IngestSummary.jsx";
 import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
 import CostModule from "../src/modules/job-cost/index.jsx";
 import TimeModule from "../src/modules/employee-time/index.jsx";
@@ -345,6 +346,23 @@ const cases = [
   ["Prod / BaselineBar", <BaselineBar meta={prodBaselineMeta} stats={prodDiff.stats} onDiscard={noop} />],
   ["Prod / BaselineBar, nothing moved", <BaselineBar meta={prodBaselineMeta} stats={prodNoDiff.stats} onDiscard={noop} />],
   ["Prod / BaselineBar, no meta", <BaselineBar meta={null} stats={null} onDiscard={noop} />, { allowEmpty: true }],
+
+  // The ingest summary is the page's answer to "did it read all of it?", so its
+  // quiet and loud states are both rendered -- a silent loud state is the bug.
+  ["IngestSummary, everything read",
+   <IngestSummary meta={{ recordsRead: 29510, rowCount: 29510, dropped: 0,
+                          sheetsRead: [{ name: "Sheet1", records: 29510, rows: 29510 }], sheetsSkipped: [] }} />],
+  ["IngestSummary, rows dropped",
+   <IngestSummary meta={{ recordsRead: 100, rowCount: 90, dropped: 10,
+                          sheetsRead: [{ name: "Sheet1", records: 100, rows: 90 }], sheetsSkipped: [] }} />],
+  ["IngestSummary, a sheet was skipped",
+   <IngestSummary meta={{ recordsRead: 50, rowCount: 50, dropped: 0,
+                          sheetsRead: [{ name: "Page 1", records: 50, rows: 50 }],
+                          sheetsSkipped: [{ name: "Page 2", why: "no Hours column" }] }} />],
+  // An import saved before these fields existed must say nothing rather than
+  // claim a completeness it cannot show.
+  ["IngestSummary, meta from an older import",
+   <IngestSummary meta={{ fileName: "old.xls" }} />, { allowEmpty: true }],
   ["Prod / PieceDetail moved", <PieceDetail piece={prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0]} siblings={[]} move={prodDiff.byRow.get(prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0])} onClose={noop} onSelect={noop} />],
   ["Prod / CoverageNotice (windows miss)", <CoverageNotice coverage={prodCoverageMiss} />],
   ["Prod / CoverageNotice (none loaded)", <CoverageNotice coverage={ticketCoverage(prodRows, [])} />, { allowEmpty: true }],
