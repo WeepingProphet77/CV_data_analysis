@@ -2,8 +2,8 @@
  * The My Projects star, and the All / My Projects scope switch.
  *
  * Module-agnostic on purpose: the selection is app-wide (core/myProjects.js),
- * so job cost, production and the missing-ticket view all mount these same
- * controls over the same list.
+ * so Projects, job cost and time all mount these same controls over the same
+ * list.
  */
 import React from "react";
 import { SCOPE_ALL, SCOPE_MINE } from "../core/myProjects.js";
@@ -66,8 +66,7 @@ export function NoProjectsYet({ onShowAll }) {
       <p className="muted" style={{ fontSize: 13, maxWidth: 460 }}>
         Star a job with the ☆ in a Jobs table, or on any job's detail page, and it
         joins My Projects. Every tab in every module then shows only those jobs —
-        job cost, the production schedule and the missing-ticket report read the
-        same list. It is saved in this browser and stays put until you add or
+        job cost and the timesheet read the same list. It is saved in this browser and stays put until you add or
         remove something.
       </p>
       <button className="btn" onClick={onShowAll}>Show all projects</button>

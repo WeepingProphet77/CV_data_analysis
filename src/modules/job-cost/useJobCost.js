@@ -54,7 +54,7 @@ export function useJobCostData(sources) {
 }
 
 /**
- * Plant / job / category / search filter state, mirroring useProductionFilters.
+ * Plant / job / category / search filter state, mirroring useTimeFilters.
  *
  * `mine` is the My Projects selection. When it is active every tab sees only
  * the starred jobs — it narrows the job pool itself rather than being applied

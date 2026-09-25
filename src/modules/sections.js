@@ -26,36 +26,10 @@ export const SECTIONS = [
   {
     id: "projects",
     label: "Projects",
-    blurb: "Every job across cost, schedule and drawings — and the starred list that scopes the app.",
-    needs: ["cost", "schedule"],
+    blurb: "Every job across cost and booked hours — and the starred list that scopes the app.",
+    needs: ["cost", "time"],
     tabs: [
       { id: "jobs", label: "All Jobs" },
-      { id: "vs-schedule", label: "Cost vs Schedule" },
-    ],
-  },
-  {
-    id: "production",
-    label: "Production",
-    blurb: "Scheduled pours by plant — the planning board, the calendar, beds and pieces.",
-    needs: ["schedule"],
-    tabs: [
-      { id: "board", label: "Board" },
-      { id: "calendar", label: "Calendar" },
-      { id: "overview", label: "Overview" },
-      { id: "beds", label: "Beds" },
-      { id: "pieces", label: "Pieces" },
-      { id: "changes", label: "Schedule Changes" },
-    ],
-  },
-  {
-    id: "drawings",
-    label: "Drawings",
-    blurb: "Pieces with no ticket drawing, ordered by how soon they are cast.",
-    needs: ["tickets"],
-    tabs: [
-      { id: "queue", label: "Queue" },
-      { id: "jobs", label: "By Job" },
-      { id: "drafters", label: "By Drafter" },
     ],
   },
   {
@@ -116,7 +90,7 @@ const ALL = [...SECTIONS, ...UTILITY];
 export const DEFAULT_SECTION = "home";
 
 /**
- * Where a route from before the 2026-08-31 rework goes.
+ * Where a route to a section that no longer exists goes.
  *
  * The sections were renamed for what they answer rather than for the file that
  * feeds them (§15), which would silently strand anyone's bookmark on Home. A
@@ -125,8 +99,13 @@ export const DEFAULT_SECTION = "home";
 export const ALIASES = {
   "employee-time": "time",
   "job-cost": "cost",
-  // Plan vs actual was never built; its scope is on Home now.
+  // Plan vs actual was never built. Its scope sat on Home until Production,
+  // which it would have joined, was retired.
   schedule: "home",
+  // Retired 2026-09-25; the pour schedule and the ticket queue live in other
+  // tools now (docs/cost-and-time-focus.md). Home says so in one line.
+  production: "home",
+  drawings: "home",
 };
 
 export const findSection = (id) => ALL.find((s) => s.id === id);

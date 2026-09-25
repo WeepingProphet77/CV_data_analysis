@@ -20,34 +20,14 @@ import Projects from "../src/modules/employee-time/views/Projects.jsx";
 import Cumulative from "../src/modules/employee-time/views/Cumulative.jsx";
 import PersonDetail from "../src/modules/employee-time/views/PersonDetail.jsx";
 import ProjectDetail from "../src/modules/employee-time/views/ProjectDetail.jsx";
-import ProductionModule from "../src/modules/production/index.jsx";
-import prodSchema from "../src/modules/production/schema.js";
-import ProdSchedule from "../src/modules/production/views/Schedule.jsx";
-import PlanningBoard from "../src/modules/production/views/PlanningBoard.jsx";
-import PieceDetail from "../src/modules/production/views/PieceDetail.jsx";
-import ProdOverview from "../src/modules/production/views/Overview.jsx";
-import ProdBeds from "../src/modules/production/views/Beds.jsx";
-import ProdPieces from "../src/modules/production/views/Pieces.jsx";
-import DayDetail from "../src/modules/production/views/DayDetail.jsx";
-import { TicketDrop, TicketImportButton, CoverageNotice } from "../src/modules/production/views/TicketImport.jsx";
-import { buildTicketSource } from "../src/modules/production/ticketParse.js";
-import { ticketIndex, ticketCoverage } from "../src/modules/production/tickets.js";
-import { ticketSheet } from "./production-ticket-sample.mjs";
-import ProdMovement from "../src/modules/production/views/Movement.jsx";
-import BaselineBar from "../src/modules/production/views/BaselineBar.jsx";
 import IngestSummary from "../src/components/IngestSummary.jsx";
 import ScopeNotice from "../src/components/ScopeNotice.jsx";
-import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
 import CostModule from "../src/modules/job-cost/index.jsx";
 import TimeModule from "../src/modules/employee-time/index.jsx";
 import HomeModule from "../src/modules/home/index.jsx";
 import SourcesModule from "../src/modules/sources/index.jsx";
 import ProjectsModule from "../src/modules/projects/index.jsx";
-import DrawingsModule from "../src/modules/drawings/index.jsx";
 import JobPage from "../src/modules/job/index.jsx";
-import DrawQueue from "../src/modules/drawings/views/Queue.jsx";
-import DrawByJob from "../src/modules/drawings/views/ByJob.jsx";
-import DrawByDrafter from "../src/modules/drawings/views/ByDrafter.jsx";
 import AppHeader from "../src/components/AppHeader.jsx";
 import { PageHeader, RouteTabs, NeedsSource } from "../src/components/Page.jsx";
 import { SourceStrip, SourceRow, RemoveButton } from "../src/components/SourceStrip.jsx";
@@ -60,7 +40,6 @@ import { tabsFor, isSection, paramsFor, SECTIONS, DEFAULT_SECTION } from "../src
 import JcPortfolio from "../src/modules/job-cost/views/Portfolio.jsx";
 import JcJobDetail from "../src/modules/job-cost/views/JobDetail.jsx";
 import JcCostCodes from "../src/modules/job-cost/views/CostCodes.jsx";
-import JcProductionLink from "../src/modules/job-cost/views/ProductionLink.jsx";
 import JcEngineering from "../src/modules/job-cost/views/Engineering.jsx";
 import { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
 import { StarButton, ScopeToggle, NoProjectsYet } from "../src/components/MyProjects.jsx";
@@ -82,70 +61,6 @@ const rows = records.map((rec) => {
   }
   return { ...row, ...schema.derive(row) };
 }).filter((r) => !schema.isEmptyRow(r));
-
-// Production module fixtures, built the same way from its own sample.
-const prodCsv = csvToRecords(readFileSync("samples/production.sample.csv", "utf8"));
-const prodMap = mapColumns(prodCsv.headers, prodSchema).mapping;
-const prodRows = prodCsv.records.map((rec) => {
-  const row = {};
-  for (const f of prodSchema.fields) {
-    const v = rec[prodMap[f.key]];
-    row[f.key] = f.type === "date" ? toIsoDate(v) : f.type === "number" ? toNumber(v) : String(v ?? "").trim();
-  }
-  return { ...row, ...prodSchema.derive(row) };
-}).filter((r) => !prodSchema.isEmptyRow(r));
-
-const prodPlants = ["All", ...distinct(prodRows, (r) => r.plant)];
-const prodDay = prodRows[0].date;
-const prodScheduledJobNos = new Set(prodRows.map((r) => r.jobNo).filter(Boolean));
-
-/*
- * A missing-ticket report built over the *production sample's own* pieces, so
- * the board actually flags something and the marker is exercised rather than
- * merely imported. Real reports may never be committed (CLAUDE.md §1), so this
- * is generated in memory like the job cost workbooks.
- */
-const prodFlagged = prodRows.filter((r) => r.isPour && r.jobNo && r.mark).slice(0, 12);
-const ticketSource = buildTicketSource(
-  ticketSheet([{
-    plant: prodFlagged[0].plant,
-    jobs: [...new Map(prodFlagged.map((r) => [r.jobNo, r])).keys()].map((jobNo) => ({
-      jobNo,
-      jobName: prodFlagged.find((r) => r.jobNo === jobNo).jobTitle,
-      group: "Grp - A",
-      // Half the rows are left unassigned so the "no drafter" bucket renders.
-      pieces: prodFlagged.filter((r) => r.jobNo === jobNo)
-        .map((r, i) => [r.mark, i % 2 ? "adrafter" : "", 46235 + i, Math.round(r.sf) || 1]),
-    })),
-  }]),
-  { fileName: "tickets.sample.xlsx" }
-);
-/*
- * A "previous upload" for the movement report: the same sample with a share of
- * the pieces shifted, some withheld so they read as new, and one invented so it
- * reads as dropped.
- */
-const prodBaseline = snapshotOf(
-  prodRows
-    .filter((_, i) => i % 37 !== 0)
-    .map((r, i) => {
-      if (!r.mark || !r.date) return r;
-      if (i % 11 === 0) return { ...r, date: `2026-0${r.date[6] === "8" ? "8" : "8"}-${String(((+r.date.slice(8) + 3) % 28) + 1).padStart(2, "0")}` };
-      return r;
-    })
-).concat([{ jobNo: prodRows[0].jobNo, job: prodRows[0].job, mark: "ZZ-DROPPED", date: prodRows[0].date, plant: prodRows[0].plant, bed: prodRows[0].bed, qty: 1 }]);
-const prodDiff = diffSchedule(prodBaseline, prodRows);
-const prodBaselineMeta = { fileName: "ScheduledProdRptDtl-prev.xls", fileDate: "2026-08-18", replacedOn: "2026-08-31", rowCount: prodBaseline.length };
-const prodNoDiff = diffSchedule(snapshotOf(prodRows), prodRows);
-
-const prodTicketIdx = ticketIndex(ticketSource.rows);
-const prodCoverage = ticketCoverage(prodRows, ticketSource.rows);
-// A report whose dates miss the schedule entirely — the state the coverage
-// notice exists to shout about.
-const prodCoverageMiss = ticketCoverage(
-  prodRows,
-  ticketSource.rows.map((t) => ({ ...t, date: "2029-01-05" }))
-);
 
 /*
  * Job cost fixtures. The sample workbooks are generated rather than read: a
@@ -169,9 +84,6 @@ const jcData = {
   asOfRange: { min: "2026-07-31", max: "2026-08-26" },
   mixedAsOf: true,
 };
-// A job that exists in the production sample too, so the join has something to
-// match: the sample job numbers differ, so one is grafted on deliberately.
-const jcJoinRows = prodRows.map((r) => ({ ...r, jobNo: "50101" }));
 const jcLossJob = jcJobs.find((j) => j.estOhProfitPct < 0) || jcJobs[0];
 const jcZeroJob = jcJobs.find((j) => j.netContract === 0) || jcJobs[0];
 
@@ -190,19 +102,11 @@ const jcMineEmpty = {
   ready: true, members: new Set(), memberList: [], count: 0, scope: "all", active: false,
   isMember: () => false, toggle: noop, setScope: noop, clearMembers: noop,
 };
-// The same selection shape, over production job numbers — My Projects is now
-// app-wide, so production mounts the very same controls.
-const prodMine = {
-  ready: true, members: new Set([prodFlagged[0].jobNo]), memberList: [prodFlagged[0].jobNo],
-  count: 1, scope: "mine", active: true,
-  isMember: (n) => n === prodFlagged[0].jobNo, toggle: noop, setScope: noop, clearMembers: noop,
-};
-
 
 /*
  * A stand-in for the app-wide data context.
  *
- * The sections that read every source at once — Home, Sources, Projects, the
+ * The sections that read both sources at once — Home, Sources, Projects, the
  * job page — cannot be handed props, so they get a fixture context instead.
  * Two of them: everything loaded, and nothing loaded, because "no file yet" is
  * a state each of those pages is supposed to explain rather than render blank.
@@ -211,21 +115,7 @@ const emptyDataset = { rows: [], meta: null, ready: true, persistWarning: "", lo
 
 const appLoaded = {
   ready: true,
-  mine: prodMine,
-  schedule: {
-    ...emptyDataset, rows: prodRows, pool: prodRows,
-    meta: { fileName: "ScheduledProdRptDtl.xls", fileDate: "2026-08-31", warnings: ["a note"] },
-  },
-  scheduleRange: { min: prodRows[0].date, max: prodRows[prodRows.length - 1].date },
-  scheduledJobNos: prodScheduledJobNos,
-  baseline: { ...emptyDataset, rows: prodBaseline, meta: prodBaselineMeta },
-  diff: prodDiff,
-  ticketData: { ...emptyDataset, rows: ticketSource.rows },
-  tickets: {
-    source: ticketSource, rows: ticketSource.rows, index: prodTicketIdx,
-    load: noop, clear: noop, persistWarning: "",
-  },
-  coverage: prodCoverage,
+  mine: jcMine,
   costLib: { sources: jcSources, ready: true, persistWarning: "", upsert: noop, remove: noop, clear: noop },
   cost: { data: { ...jcData, costs: jcCosts, quantities: jcQuantities, costsByJob: new Map(), qtyByJob: jcQtyByJob, byJobKey: new Map(jcJobs.map((j) => [j.key, j])) } },
   time: { ...emptyDataset, rows, meta: { fileName: "time.csv", fileDate: "2026-08-31" } },
@@ -234,14 +124,6 @@ const appLoaded = {
 const appEmpty = {
   ready: true,
   mine: jcMineEmpty,
-  schedule: { ...emptyDataset, pool: [] },
-  scheduleRange: { min: "", max: "" },
-  scheduledJobNos: new Set(),
-  baseline: emptyDataset,
-  diff: diffSchedule([], []),
-  ticketData: emptyDataset,
-  tickets: { source: { fileName: "", rows: [], jobs: [], plants: [], range: { min: "", max: "" }, warnings: [] }, rows: [], index: new Map(), load: noop, clear: noop, persistWarning: "" },
-  coverage: ticketCoverage([], []),
   costLib: { sources: [], ready: true, persistWarning: "", upsert: noop, remove: noop, clear: noop },
   cost: { data: { jobs: [], costs: [], quantities: [], byJobKey: new Map(), costsByJob: new Map(), qtyByJob: new Map(), asOfRange: { min: "", max: "" }, mixedAsOf: false } },
   time: emptyDataset,
@@ -263,8 +145,6 @@ const iso = (daysAgo) => {
 };
 const withAges = (base, days) => ({
   ...base,
-  schedule: { ...base.schedule, meta: { ...base.schedule.meta, fileDate: iso(days) } },
-  tickets: { ...base.tickets, source: { ...base.tickets.source, fileDate: iso(days) } },
   time: { ...base.time, meta: { ...(base.time.meta || {}), fileDate: iso(days) } },
   costLib: { ...base.costLib, sources: base.costLib.sources.map((x, i) => ({ ...x, fileDate: iso(days + i * 3) })) },
 });
@@ -273,12 +153,10 @@ const appStale = withAges(appLoaded, 40);
 // appLoaded's workbook sources carry no fileDate at all — the pre-existing
 // import case, which must read as "unknown" rather than as an empty cell.
 
-const projRows = projectRows({
-  costJobs: jcJobs, scheduleRows: prodRows, ticketRows: ticketSource.rows, timeRows: rows,
-});
+const projRows = projectRows({ costJobs: jcJobs, timeRows: rows });
 // A job the timesheet sample actually books hours to, so the Hours block on the
 // job page is exercised rather than merely imported.
-const timedJobNo = rows.map((r) => r.jobNo).find(Boolean) || prodFlagged[0].jobNo;
+const timedJobNo = rows.map((r) => r.jobNo).find(Boolean) || jcJobs[0].jobNo;
 const sourceRoute = { section: "time", params: [], tab: "overview", rest: [] };
 
 // My Projects over a job number the timesheet actually books hours to — Time
@@ -309,44 +187,6 @@ const cases = [
   ["Cumulative", <Cumulative rows={rows} />],
   ["PersonDetail", <PersonDetail name={person} rows={rows} onBack={noop} onOpenProject={noop} />],
   ["ProjectDetail", <ProjectDetail job={job} rows={rows} onBack={noop} onOpenPerson={noop} />],
-  ["Prod / Board", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
-  ["Prod / Board + tickets", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} />],
-  ["Prod / Board + movement", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodDiff.byRow} />],
-  ["Prod / Board + tickets and movement", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} movement={prodDiff.byRow} />],
-  ["Prod / Board + movement, nothing moved", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodNoDiff.byRow} />],
-  ["Prod / Board + empty ticket index", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={new Map()} />],
-  ["Prod / Board + tickets, none matching", <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={ticketIndex([{ jobNo: "00000", mark: "NOPE", key: "00000|NOPE" }])} />],
-  ["Prod / Board (1 plant)", <PlanningBoard rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
-  ["Prod / Board no rows", <PlanningBoard rows={[]} plant="All" plants={["All"]} onPlant={noop} />],
-  ["Prod / PieceDetail", <PieceDetail piece={prodRows.find((r) => r.isPour)} siblings={prodRows.slice(0, 4)} onClose={noop} onSelect={noop} />],
-  ["Prod / PieceDetail bed activity", <PieceDetail piece={prodRows.find((r) => !r.isPour)} siblings={[]} onClose={noop} onSelect={noop} />],
-  ["Prod / PieceDetail missing ticket", <PieceDetail piece={prodFlagged[0]} siblings={[]} ticket={prodTicketIdx.get(ticketSource.rows[0].key)} ticketsLoaded onClose={noop} onSelect={noop} />],
-  ["Prod / PieceDetail ticket present", <PieceDetail piece={prodRows.find((r) => r.isPour)} siblings={[]} ticketsLoaded onClose={noop} onSelect={noop} />],
-  ["Prod / Schedule", <ProdSchedule rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />],
-  ["Prod / Schedule (1 plant)", <ProdSchedule rows={prodRows.filter((r) => r.plant === prodPlants[1])} plant={prodPlants[1]} plants={prodPlants} onPlant={noop} />],
-  ["Prod / Overview", <ProdOverview rows={prodRows} onOpenJob={noop} />],
-  ["Prod / Beds", <ProdBeds rows={prodRows} search="" />],
-  ["Draw / Queue", <DrawQueue rows={ticketSource.rows} scheduledJobNos={prodScheduledJobNos} today="2026-08-10" onOpenJob={noop} />],
-  ["Draw / Queue no rows", <DrawQueue rows={[]} scheduledJobNos={prodScheduledJobNos} today="2026-08-10" onOpenJob={noop} />],
-  ["Draw / Queue one row", <DrawQueue rows={ticketSource.rows.slice(0, 1)} scheduledJobNos={new Set()} today="2026-08-10" onOpenJob={noop} />],
-  ["Draw / ByJob", <DrawByJob rows={ticketSource.rows} scheduledJobNos={prodScheduledJobNos} mine={prodMine} onOpenJob={noop} />],
-  ["Draw / ByJob no stars", <DrawByJob rows={ticketSource.rows} scheduledJobNos={new Set()} onOpenJob={noop} />],
-  ["Draw / ByJob no rows", <DrawByJob rows={[]} scheduledJobNos={new Set()} mine={prodMine} onOpenJob={noop} />],
-  ["Draw / ByDrafter", <DrawByDrafter rows={ticketSource.rows} />],
-  ["Draw / ByDrafter no rows", <DrawByDrafter rows={[]} />],
-  ["Draw / section", withApp(<DrawingsModule tab="queue" />)],
-  ["Draw / section by job", withApp(<DrawingsModule tab="jobs" />)],
-  ["Draw / section by drafter", withApp(<DrawingsModule tab="drafters" />)],
-  ["Draw / section, nothing loaded", withApp(<DrawingsModule tab="queue" />, appEmpty)],
-  ["Prod / TicketDrop", <TicketDrop onSource={noop} />],
-  ["Prod / TicketImportButton", <TicketImportButton onSource={noop} />],
-  ["Prod / Movement", <ProdMovement diff={prodDiff} baselineMeta={prodBaselineMeta} currentMeta={{ fileName: "ScheduledProdRptDtl.xls" }} mine={prodMine} onOpenJob={noop} />],
-  ["Prod / Movement, nothing moved", <ProdMovement diff={prodNoDiff} baselineMeta={prodBaselineMeta} currentMeta={{ fileName: "x.xls" }} mine={prodMine} onOpenJob={noop} />],
-  ["Prod / Movement, no stars", <ProdMovement diff={prodDiff} baselineMeta={prodBaselineMeta} currentMeta={{}} onOpenJob={noop} />],
-  ["Prod / Movement, no baseline", <ProdMovement diff={diffSchedule([], prodRows)} baselineMeta={null} currentMeta={{}} onOpenJob={noop} />],
-  ["Prod / BaselineBar", <BaselineBar meta={prodBaselineMeta} stats={prodDiff.stats} onDiscard={noop} />],
-  ["Prod / BaselineBar, nothing moved", <BaselineBar meta={prodBaselineMeta} stats={prodNoDiff.stats} onDiscard={noop} />],
-  ["Prod / BaselineBar, no meta", <BaselineBar meta={null} stats={null} onDiscard={noop} />, { allowEmpty: true }],
 
   // The ingest summary is the page's answer to "did it read all of it?", so its
   // quiet and loud states are both rendered -- a silent loud state is the bug.
@@ -374,15 +214,6 @@ const cases = [
                 dimensions={[{ label: "Location", value: "All" }]} />, { allowEmpty: true }],
   ["IngestSummary, meta from an older import",
    <IngestSummary meta={{ fileName: "old.xls" }} />, { allowEmpty: true }],
-  ["Prod / PieceDetail moved", <PieceDetail piece={prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0]} siblings={[]} move={prodDiff.byRow.get(prodRows.find((r) => prodDiff.byRow.get(r)?.kind === "later") || prodRows[0])} onClose={noop} onSelect={noop} />],
-  ["Prod / CoverageNotice (windows miss)", <CoverageNotice coverage={prodCoverageMiss} />],
-  ["Prod / CoverageNotice (none loaded)", <CoverageNotice coverage={ticketCoverage(prodRows, [])} />, { allowEmpty: true }],
-  ["Prod / Pieces", <ProdPieces rows={prodRows} search="" />],
-  ["Prod / DayDetail", <DayDetail date={prodDay} rows={prodRows.filter((r) => r.date === prodDay)} onClose={noop} />],
-  ["Prod / Schedule no rows", <ProdSchedule rows={[]} plant="All" plants={["All"]} onPlant={noop} />],
-  ["Prod / Overview no rows", <ProdOverview rows={[]} onOpenJob={noop} />],
-  ["Prod / Beds no rows", <ProdBeds rows={[]} search="" />],
-  ["Prod / DayDetail bed-activity only", <DayDetail date={prodDay} rows={prodRows.filter((r) => !r.isPour).slice(0, 3)} onClose={noop} />],
   ["Cost section", withApp(<CostModule tab="portfolio" />)],
   ["Cost section / codes", withApp(<CostModule tab="codes" />)],
   ["Cost section / engineering", withApp(<CostModule tab="engineering" />)],
@@ -396,10 +227,6 @@ const cases = [
   ["Time / person route", withApp(<TimeModule tab="people" route={{ ...sourceRoute, rest: ["person", person] }} />)],
   ["Time / job route", withApp(<TimeModule tab="jobs" route={{ ...sourceRoute, rest: ["job", job] }} />)],
   ["Time section, nothing loaded", withApp(<TimeModule tab="overview" route={sourceRoute} />, appEmpty)],
-  ["Production section", withApp(<ProductionModule tab="board" />)],
-  ["Production / calendar", withApp(<ProductionModule tab="calendar" />)],
-  ["Production / changes", withApp(<ProductionModule tab="changes" />)],
-  ["Production section, nothing loaded", withApp(<ProductionModule tab="board" />, appEmpty)],
   ["JC / SourceDrop empty", <SourceDrop onSource={noop} />],
   ["JC / Portfolio", <JcPortfolio jobs={jcJobs} costs={jcCosts} onOpenJob={noop} />],
   ["JC / ScopeToggle", <ScopeToggle mine={jcMine} />],
@@ -407,14 +234,11 @@ const cases = [
   ["JC / StarButton", <StarButton jobNo="50101" on onToggle={noop} />],
   ["JC / NoProjectsYet", <NoProjectsYet onShowAll={noop} />],
   ["JC / CostCodes", <JcCostCodes costs={jcCosts} jobs={jcJobs} search="" onOpenJob={noop} />],
-  ["JC / JobDetail", <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)} quantities={jcQtyByJob.get(jcJobs[0].key) || []} production mine={jcMine} onBack={noop} onOpenProduction={noop} />],
+  ["JC / JobDetail", <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)} quantities={jcQtyByJob.get(jcJobs[0].key) || []} mine={jcMine} onBack={noop} />],
   // A job forecast to a loss, and one with no contract at all — every margin
   // and progress figure divides by one of those.
-  ["JC / JobDetail loss", <JcJobDetail job={jcLossJob} costs={jcCosts.filter((c) => c.jobKey === jcLossJob.key)} quantities={jcQtyByJob.get(jcLossJob.key) || []} production={false} onBack={noop} onOpenProduction={noop} />],
-  ["JC / JobDetail zero contract", <JcJobDetail job={jcZeroJob} costs={jcCosts.filter((c) => c.jobKey === jcZeroJob.key)} quantities={[]} production={false} onBack={noop} onOpenProduction={noop} />],
-  ["Projects / vs Schedule", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />],
-  ["Projects / vs Schedule, none loaded", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={[]} onOpenJob={noop} />],
-  ["Projects / vs Schedule, no match", <JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={prodRows} onOpenJob={noop} />],
+  ["JC / JobDetail loss", <JcJobDetail job={jcLossJob} costs={jcCosts.filter((c) => c.jobKey === jcLossJob.key)} quantities={jcQtyByJob.get(jcLossJob.key) || []} onBack={noop} />],
+  ["JC / JobDetail zero contract", <JcJobDetail job={jcZeroJob} costs={jcCosts.filter((c) => c.jobKey === jcZeroJob.key)} quantities={[]} onBack={noop} />],
   ["JC / Engineering", <JcEngineering jobs={jcJobs} costs={jcCosts} quantities={jcQuantities} mine={jcMineEmpty} onOpenJob={noop} onScopeToMine={noop} />],
   ["JC / Engineering scoped", <JcEngineering jobs={jcJobs.filter((j) => jcMine.members.has(j.jobNo))} costs={jcCosts} quantities={jcQuantities} mine={jcMine} onOpenJob={noop} onScopeToMine={noop} />],
   ["JC / Engineering no D&E", <JcEngineering jobs={jcJobs} costs={[]} quantities={[]} mine={jcMineEmpty} onOpenJob={noop} onScopeToMine={noop} />],
@@ -424,24 +248,22 @@ const cases = [
   ["Home", withApp(<HomeModule />)],
   ["Home, stale files", withApp(<HomeModule />, appStale)],
   ["Home, nothing loaded", withApp(<HomeModule />, appEmpty)],
-  ["AppHeader, stale files", <AppHeader section="home" mine={prodMine} summary={sourceSummary(appStale)} />],
+  ["AppHeader, stale files", <AppHeader section="home" mine={jcMine} summary={sourceSummary(appStale)} />],
   ["Sources", withApp(<SourcesModule />)],
   ["Sources, fresh files", withApp(<SourcesModule />, appFresh)],
   ["Sources, stale files", withApp(<SourcesModule />, appStale)],
   ["Sources, nothing loaded", withApp(<SourcesModule />, appEmpty)],
   ["Projects / All Jobs", withApp(<ProjectsModule tab="jobs" />)],
-  ["Projects / Cost vs Schedule", withApp(<ProjectsModule tab="vs-schedule" />)],
   ["Projects, nothing loaded", withApp(<ProjectsModule tab="jobs" />, appEmpty)],
-  ["Job page", withApp(<JobPage params={[prodFlagged[0].jobNo]} tab="summary" />)],
   ["Job page with hours", withApp(<JobPage params={[timedJobNo]} tab="summary" />)],
   ["Job page / full cost report", withApp(<JobPage params={[jcJobs[0].jobNo]} tab="cost" />)],
   ["Job page, cost only", withApp(<JobPage params={[jcJobs[0].jobNo]} tab="summary" />)],
   ["Job page, unknown job", withApp(<JobPage params={["00000"]} tab="summary" />)],
   ["Job page, nothing loaded", withApp(<JobPage params={["43134"]} tab="summary" />, appEmpty)],
-  ["AppHeader", <AppHeader section="home" mine={prodMine} summary={sourceSummary(appLoaded)} />],
+  ["AppHeader", <AppHeader section="home" mine={jcMine} summary={sourceSummary(appLoaded)} />],
   ["AppHeader, nothing loaded", <AppHeader section="home" mine={jcMineEmpty} summary={sourceSummary(appEmpty)} />],
   ["PageHeader", <PageHeader title="T" subtitle="s" actions={<button className="btn">x</button>} />],
-  ["RouteTabs", <RouteTabs section="production" tabs={tabsFor("production")} active="board" counts={{ beds: 3 }} />],
+  ["RouteTabs", <RouteTabs section="cost" tabs={tabsFor("cost")} active="portfolio" counts={{ codes: 3 }} />],
   ["NeedsSource", <NeedsSource title="T" file="a file" blurb="b" />],
   ["SourceStrip", <SourceStrip><SourceRow name="n" badge="b" detail="d" fileName="f.xls" actions={<RemoveButton onRemove={noop} what="it" />} /></SourceStrip>],
 
@@ -477,130 +299,10 @@ if (paths < 2 || circles < 2) {
   console.log(`  ok   chart drew geometry        ${paths} paths, ${circles} end markers`);
 }
 
-// The calendar must actually emit a full rectangular grid of day cells.
-const calHtml = renderToString(<ProdSchedule rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />);
-const dayCells = (calHtml.match(/min-height:92px/g) || []).length;
-if (dayCells === 0 || dayCells % 7 !== 0) {
-  failures++;
-  console.log(`FAIL   calendar rendered a whole grid (got ${dayCells} cells)`);
-} else {
-  console.log(`  ok   calendar rendered a whole grid   ${dayCells} cells (${dayCells / 7} weeks)`);
-}
-
-// Charts in the production module must draw geometry too.
-const prodChart = renderToString(<ProdOverview rows={prodRows} onOpenJob={noop} />);
-const prodPaths = (prodChart.match(/<path/g) || []).length;
-if (prodPaths < 10) {
-  failures++;
-  console.log(`FAIL   production charts drew geometry (paths=${prodPaths})`);
-} else {
-  console.log(`  ok   production charts drew geometry  ${prodPaths} paths`);
-}
-
-// The board must emit a real grid: one row per bed, cards that are buttons.
-const boardHtml = renderToString(<PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />);
-const cards = (boardHtml.match(/class="pcard"/g) || []).length;
-const wkCols = (boardHtml.match(/class="wk"/g) || []).length;
-if (cards < 100 || wkCols === 0) {
-  failures++;
-  console.log(`FAIL   board rendered cards + week totals (cards=${cards}, wk cells=${wkCols})`);
-} else {
-  console.log(`  ok   board rendered its grid          ${cards} piece cards, ${wkCols} week-total cells`);
-}
-
-// The missing-ticket marker must actually reach the grid: a flagged card gets
-// the .noticket class AND the words, because a color alone is not identity
-// (CLAUDE.md §5) and the board is read by people who need it to be obvious.
-const flaggedHtml = renderToString(
-  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} tickets={prodTicketIdx} />
-);
-const flaggedCards = (flaggedHtml.match(/class="pcard noticket"/g) || []).length;
-const flagChips = (flaggedHtml.match(/class="tflag"/g) || []).length;
-const plainCards = (flaggedHtml.match(/class="pcard"/g) || []).length;
-if (flaggedCards === 0 || flagChips < flaggedCards || plainCards === 0) {
-  failures++;
-  console.log(`FAIL   board flagged missing tickets (flagged=${flaggedCards}, chips=${flagChips}, plain=${plainCards})`);
-} else {
-  console.log(`  ok   board flagged missing tickets  ${flaggedCards} flagged, ${plainCards} not, ${flagChips} chips`);
-}
-
-// ...and an unflagged board must be genuinely unflagged, so the marker can't be
-// something that renders on every card regardless.
-const unflagged = renderToString(
-  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />
-);
-if (/noticket|tflag/.test(unflagged)) {
-  failures++;
-  console.log("FAIL   board without a ticket report flags nothing");
-} else {
-  console.log("  ok   board without tickets flags none");
-}
-
-// The movement chip must reach the card, and must NOT appear on a board with no
-// baseline — a chip on every card would make "moved" meaningless.
-// Only the grid counts: the footnote carries a legend of the same chips, and
-// counting those would let a board that draws none still pass.
-const gridOf = (html) => html.split("</table>")[0];
-const movedHtml = renderToString(
-  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodDiff.byRow} />
-);
-const movedGrid = gridOf(movedHtml);
-const upChips = (movedGrid.match(/class="mvchip up"/g) || []).length;
-const backChips = (movedGrid.match(/class="mvchip back"/g) || []).length;
-const newChips = (movedGrid.match(/class="mvchip new"/g) || []).length;
-if (upChips + backChips === 0 || newChips === 0) {
-  failures++;
-  console.log(`FAIL   board drew movement chips (up=${upChips}, back=${backChips}, new=${newChips})`);
-} else {
-  console.log(`  ok   board drew movement chips     ${upChips} earlier, ${backChips} later, ${newChips} new`);
-}
-
-// A chip carries an arrow and a day count, so it survives being read without
-// color — the board already spends color on the job and on missing tickets.
-if (!/▲|▼/.test(movedGrid)) {
-  failures++;
-  console.log("FAIL   movement chips carry a direction glyph, not color alone");
-} else {
-  console.log("  ok   movement chips are not color-alone");
-}
-
-const noBaselineHtml = renderToString(
-  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} />
-);
-if (/mvchip/.test(noBaselineHtml)) {
-  failures++;
-  console.log("FAIL   board with no baseline draws no movement chip");
-} else {
-  console.log("  ok   no baseline, no movement chips");
-}
-
-// An unchanged piece must not get a zero chip; only a real change earns space.
-const calmHtml = renderToString(
-  <PlanningBoard rows={prodRows} plant="All" plants={prodPlants} onPlant={noop} movement={prodNoDiff.byRow} />
-);
-const calmChips = (gridOf(calmHtml).match(/class="mvchip/g) || []).length;
-if (calmChips > 0) {
-  failures++;
-  console.log(`FAIL   an unmoved piece draws no chip (${calmChips} in the grid)`);
-} else {
-  console.log("  ok   unmoved pieces draw no chip   legend still shown");
-}
-
-// The coverage notice is the one thing that must never be silent when the two
-// reports don't line up — a quiet board would read as "everything is drawn".
-const missHtml = renderToString(<CoverageNotice coverage={prodCoverageMiss} />);
-if (!/notice red/.test(missHtml) || !/every piece is drawn/.test(missHtml)) {
-  failures++;
-  console.log(`FAIL   coverage notice warns on a window miss (${missHtml.slice(0, 90)})`);
-} else {
-  console.log("  ok   coverage notice warns loudly   on a date-window miss");
-}
-
-// The job cost grid must reproduce the report's sections and subtotals, and
-// the join view must actually match a job rather than silently rendering none.
+// The job cost grid must reproduce the report's sections and subtotals.
 const jcDetail = renderToString(
   <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)}
-               quantities={jcQtyByJob.get(jcJobs[0].key) || []} production onBack={noop} onOpenProduction={noop} />
+               quantities={jcQtyByJob.get(jcJobs[0].key) || []} onBack={noop} />
 );
 const groupRows = (jcDetail.match(/class="grouprow"/g) || []).length;
 const subtotals = (jcDetail.match(/class="subtotalrow"/g) || []).length;
@@ -650,7 +352,8 @@ if (!projMineHtml.includes("★") || !projAllHtml.includes("☆")) {
   const stale = renderToString(withApp(<SourcesModule />, appStale));
   const unknown = renderToString(withApp(<SourcesModule />, appLoaded));
   const dated = (h) => (h.match(/modified \d{4}-\d{2}-\d{2}/g) || []).length;
-  if (dated(fresh) < 4) {
+  // One per source card: cost (its oldest plant) and time.
+  if (dated(fresh) < 2) {
     failures++;
     console.log(`FAIL   every loaded source shows a modified date (found ${dated(fresh)})`);
   } else {
@@ -672,21 +375,20 @@ if (!projMineHtml.includes("★") || !projAllHtml.includes("☆")) {
 }
 
 // The unified table must carry both sides: a job the cost reports know and a
-// job only the schedule knows appear in one list, with the absent side dashed
+// job only the timesheet knows appear in one list, with the absent side dashed
 // rather than zeroed. That is the merge this section exists to perform.
 {
   // Every row must come from at least one source -- a row belonging to none
   // would mean the merge invented a job.
-  const orphan = projRows.filter((r) => !r.costed && !r.scheduled && !r.drawn && !r.timed).length;
+  const orphan = projRows.filter((r) => !r.costed && !r.timed).length;
   const costed = projRows.filter((r) => r.costed).length;
-  const sched = projRows.filter((r) => r.scheduled).length;
   const timed = projRows.filter((r) => r.timed).length;
   const only = (k) => projRows.filter((r) => r.sources === k).length;
-  if (orphan > 0 || projRows.length < Math.max(costed, sched, timed) || projRows.length <= jcJobs.length) {
+  if (orphan > 0 || projRows.length < Math.max(costed, timed) || projRows.length <= jcJobs.length) {
     failures++;
-    console.log(`FAIL   projects merged every source (orphans=${orphan}, rows=${projRows.length}, cost=${costed}, sched=${sched}, time=${timed})`);
+    console.log(`FAIL   projects merged both sources (orphans=${orphan}, rows=${projRows.length}, cost=${costed}, time=${timed})`);
   } else {
-    console.log(`  ok   projects merged every source     ${projRows.length} jobs (${costed} costed, ${sched} scheduled, ${timed} with hours; ${only("cost")} cost-only, ${only("schedule")} schedule-only, ${only("time")} time-only)`);
+    console.log(`  ok   projects merged both sources     ${projRows.length} jobs (${costed} costed, ${timed} with hours; ${only("cost")} cost-only, ${only("time")} time-only)`);
   }
   if (!/Not in this source/.test(projAllHtml)) {
     failures++;
@@ -739,12 +441,23 @@ if (engPaths < 8) {
   }
 }
 
-const jcJoin = renderToString(<JcProductionLink jobs={jcJobs} qtyByJob={jcQtyByJob} production={jcJoinRows} onOpenJob={noop} />);
-if (!jcJoin.includes("50101") || jcJoin.includes("No job number appears in both")) {
-  failures++;
-  console.log("FAIL   cost/production join matched a job");
-} else {
-  console.log("  ok   cost/production join matched a job");
+// The retired sections must be gone from the nav, and an old bookmark must not
+// render a blank page (docs/cost-and-time-focus.md).
+{
+  const nav = renderToString(<AppHeader section="home" mine={jcMine} summary={sourceSummary(appLoaded)} />);
+  if (/#\/production|#\/drawings|>Production<|>Drawings</.test(nav)) {
+    failures++;
+    console.log("FAIL   the nav no longer offers Production or Drawings");
+  } else {
+    console.log("  ok   the nav no longer offers Production or Drawings");
+  }
+  const home = renderToString(withApp(<HomeModule />));
+  if (!/moved to\s+other tools/.test(home)) {
+    failures++;
+    console.log("FAIL   Home says where the retired sections went");
+  } else {
+    console.log("  ok   Home says where the retired sections went");
+  }
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll views rendered.\n`);

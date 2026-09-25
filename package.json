@@ -3,18 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Analysis dashboards for data exported from Concrete Vision",
+  "description": "Job cost and timesheet analysis for Concrete Vision and the weekly job cost reports",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "npm run test:data && npm run test:production && npm run test:jobcost && npm run test:storage && npm run test:render",
+    "test": "npm run test:data && npm run test:jobcost && npm run test:storage && npm run test:render",
     "test:data": "node scripts/smoke-test.mjs",
     "test:render": "vite build --ssr scripts/render-test.jsx --outDir .render-test --logLevel warn && node .render-test/render-test.js",
-    "sample": "node scripts/make-sample.mjs > samples/employee-time.sample.csv && node scripts/make-production-sample.mjs > samples/production.sample.csv",
+    "sample": "node scripts/make-sample.mjs > samples/employee-time.sample.csv",
     "deploy": "bash scripts/deploy-pages.sh",
     "test:storage": "node scripts/storage-test.mjs",
-    "test:production": "node scripts/production-test.mjs",
     "test:jobcost": "node scripts/job-cost-test.mjs"
   },
   "dependencies": {

@@ -15,8 +15,7 @@ import { mapColumns, toIsoDate, toNumber } from "../src/core/parse.js";
 import schema from "../src/modules/employee-time/schema.js";
 import { libraryKey } from "../src/core/library.js";
 import { prefKey } from "../src/core/persisted.js";
-import { storeKey } from "../src/core/store.js";
-import { snapshotOf, diffSchedule } from "../src/modules/production/movement.js";
+import { storeKey, dropRetiredRecords, RETIRED_RECORDS } from "../src/core/store.js";
 import { isValidSelection, toggleMember } from "../src/core/myProjects.js";
 import { readRecord, writeRecord } from "../src/core/store.js";
 import { buildSource } from "../src/modules/job-cost/parse.js";
@@ -123,8 +122,8 @@ ok("a dataset record is not mistaken for a library", !isLibrary({ rows: [] }));
  * clearing imported files must not forget which projects were starred.
  */
 console.log("\nMy Projects preference");
-// App-wide, not per module: the same starred list scopes job cost, production
-// and the missing-ticket report, so it is keyed on "app" rather than a module.
+// App-wide, not per module: the same starred list scopes Projects, job cost
+// and time, so it is keyed on "app" rather than a module.
 const prefsKey = prefKey("app", "my-projects");
 const legacyPrefsKey = prefKey("job-cost", "my-projects");
 // The app's own guard, not a copy of it — a validator that drifts from the one
@@ -153,8 +152,8 @@ ok("an unknown scope is rejected",
    (await readRecord(prefsKey, (v) => v != null && validPref(v.value))) === null);
 
 /*
- * The selection moved from a job-cost key to an app-wide one when production
- * and the ticket report started reading it. A hand-curated list must survive
+ * The selection moved from a job-cost key to an app-wide one when other
+ * sections started reading it. A hand-curated list must survive
  * that move — re-starring everything because the scope widened would be the
  * most annoying possible upgrade.
  */
@@ -182,56 +181,29 @@ ok("toggling adds and removes one job number",
    toggleMember(["43134", "45154"], "43134").join() === "45154");
 
 /*
- * The schedule baseline. It is a third record, and the rules that matter are:
- * it survives a reload, it is separate from the schedule it describes, and
- * clearing the schedule takes it with it — a baseline that outlived its data
- * would compare a fresh import against a file nobody remembers loading.
- *
- * Note what this does and does not cover. It asserts the *storage* rule, with
- * the clear simulated by deleting both keys. The code that actually pairs them
- * is `clearSchedule` in src/app/AppData.jsx (§15), and it is not reachable from
- * node — it is a hook, and effects don't run under server rendering. If you
- * touch that function, this suite will not catch you.
+ * Records for the sections retired on 2026-09-25 (docs/cost-and-time-focus.md).
+ * Nothing reads them any more, so without this they would sit in every browser
+ * that ever loaded a schedule, several MB each, forever. The rules: all three
+ * go, nothing else does, and running it again is harmless.
  */
-console.log("\nSchedule movement baseline");
-const schedKey = storeKey("production");
-const baseKey = storeKey("production-baseline");
-const tickKey = storeKey("production-tickets");
-ok("the baseline is its own record",
-   baseKey !== schedKey && baseKey !== tickKey, `${baseKey} vs ${schedKey}`);
+console.log("\nRetired records are dropped");
+ok("the three retired records are named",
+   RETIRED_RECORDS.join() === "production,production-tickets,production-baseline", RETIRED_RECORDS.join());
+for (const id of RETIRED_RECORDS) await idbSet(storeKey(id), { rows: [{ jobNo: "1" }], meta: null });
+const timeKey = storeKey("employee-time");
+await writeRecord(timeKey, { rows: [{ name: "N", hrs: 1 }], meta: null });
+await writeRecord(prefsKey, { value: { members: ["50101"], scope: "mine" } });
 
-const mkRow = (mark, date) => ({
-  jobNo: "43134", job: "43134 - JOB", jobTitle: "JOB", mark, date,
-  plant: "P1", bed: "Pad 1", qty: 1,
-});
-const oldSched = [mkRow("A", "2026-08-05"), mkRow("B", "2026-08-06")];
-const newSched = [mkRow("A", "2026-08-05"), mkRow("B", "2026-08-13")];
-
-await writeRecord(baseKey, { rows: snapshotOf(oldSched), meta: { fileName: "prev.xls", rowCount: 2 } });
-await writeRecord(schedKey, { rows: newSched, meta: { fileName: "new.xls" } });
-
-const savedBase = await readRecord(baseKey, (v) => Array.isArray(v?.rows));
-ok("the baseline round-trips", savedBase?.rows.length === 2 && savedBase.meta.fileName === "prev.xls");
-
-// The comparison must survive a reload, not just the upload that created it.
-const reloaded = diffSchedule(savedBase.rows, newSched);
-ok("the comparison still works after a reload",
-   reloaded.ready && reloaded.moved.length === 1 && reloaded.moved[0].days === 7,
-   JSON.stringify(reloaded.moved.map((m) => m.days)));
-
-// Only what the comparison needs is stored — a full second copy of the export
-// would double the module's footprint for nothing.
-const full = JSON.stringify(newSched).length;
-const snap = JSON.stringify(snapshotOf(newSched)).length;
-ok("the snapshot is smaller than a full copy of the rows", snap < full, `${snap} vs ${full} bytes`);
-
-// The user's own words: cleared data means the comparison is gone.
-await idbDel(schedKey);
-await idbDel(baseKey);
-ok("clearing the schedule leaves no baseline behind",
-   (await idbGet(baseKey)) === undefined && (await idbGet(schedKey)) === undefined);
-ok("a diff with no baseline is not ready, rather than empty-but-ready",
-   diffSchedule([], newSched).ready === false);
+await dropRetiredRecords();
+const left = await Promise.all(RETIRED_RECORDS.map((id) => idbGet(storeKey(id))));
+ok("every retired record is gone", left.every((v) => v === undefined));
+ok("the timesheet is untouched", (await readRecord(timeKey, (v) => Array.isArray(v?.rows)))?.rows.length === 1);
+ok("the cost library is untouched", (await idbGet(libKey)) !== undefined);
+ok("the starred list is untouched",
+   (await readRecord(prefsKey, (v) => v != null && validPref(v.value)))?.value.members.join() === "50101");
+let again = true;
+try { await dropRetiredRecords(); } catch { again = false; }
+ok("running it again is a harmless no-op", again);
 
 console.log(failures ? `\n${failures} FAILURE(S)\n` : `\nAll persistence checks passed.\n`);
 process.exit(failures ? 1 : 0);

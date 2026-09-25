@@ -5,8 +5,8 @@
  * Two of these were previously invisible from most of the app. The My Projects
  * scope is app-wide state (core/myProjects.js) but its switch was mounted
  * inside two modules' filter rows, so it looked like a per-module filter and
- * vanished on the third. And the warnings that matter most — a ticket report
- * that doesn't cover the schedule, plants exported on different dates — were
+ * vanished on the third. And the warnings that matter most — plants exported
+ * on different dates, a file nobody has refreshed in a fortnight — were
  * announced only to someone already standing on the tab that raised them. Both
  * belong to the whole app, so both live in the chrome.
  */

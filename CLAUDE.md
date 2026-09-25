@@ -10,8 +10,9 @@ commit that changes the code.
 
 **Read §1 (constraints), §2 (layout), §15 (the shell) and §7 (testing) before
 changing anything.** Then read the section for the part you are touching:
-§11 production and drawings, §12 time, §13 cost. §3 covers adding a tab, a
-section or a new export; §9 the code conventions; §6 styling.
+§12 time, §13 cost. §3 covers adding a tab, a section or a new export; §9 the
+code conventions; §6 styling. §11 is a tombstone: Production and Drawings were
+retired on 2026-09-25 (`docs/cost-and-time-focus.md`).
 
 ### The working cycle
 
@@ -22,7 +23,7 @@ Every change in this repo has gone through the same loop. Follow it:
    rather than reasoning about it — see the $/SF and hours episodes in §13.
 2. **Put pure logic in a `.js` file** the test scripts can import in node, and
    keep `.jsx` for views only (§2).
-3. **`npm test`** — five suites. The job cost and production suites additionally
+3. **`npm test`**: four suites. The job cost and data suites additionally
    run against the *real* exports when they are present locally, which is the
    check that matters most.
 4. **Update this file in the same commit**, wherever a decision here stopped
@@ -34,18 +35,18 @@ Every change in this repo has gone through the same loop. Follow it:
 7. **Say plainly that nothing was visually verified** — there is no browser
    automation here (§7).
 
-### State as of 2026-08-31
+### State as of 2026-09-25
 
 | | |
 |---|---|
 | Live site | https://weepingprophet77.github.io/CV_data_analysis/ |
 | Repo | github.com/WeepingProphet77/CV_data_analysis (public) |
-| Sections | **Home** · **Projects** · **Production** · **Drawings** · **Cost** · **Time**, plus **Sources** and the **job page**, which are addressed but not in the nav (§15) |
-| Plan vs actual | not built — the export's columns are still a guess. Its scope lives on Home, ready to return as a Production tab (§15) |
-| Deploys | **manual** — `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
-| Tests | five suites, all passing — `npm test` |
-| Real data | the schedule, ticket, timesheet and `weekly job costs/` exports sit in the working directory, gitignored. The tests find them **by content, not by name** (§7), so a re-download under any name still gets checked |
-| Profiled | all four exports, as of 2026-08-31. Nothing in the app is now fed by a guessed schema |
+| Sections | **Home** · **Projects** · **Cost** · **Time**, plus **Sources** and the **job page**, which are addressed but not in the nav (§15) |
+| Retired | **Production** and **Drawings**, 2026-09-25. The pour schedule and the missing-ticket queue moved to other tools. Plan and reasoning in `docs/cost-and-time-focus.md`; the code is recoverable from commit `ca57d86` (tagged `pre-cost-time-focus` locally, push the tag if it is not on the remote yet) |
+| Deploys | **manual**: `npm run deploy`. Pushing to `main` does *not* update the site (§8) |
+| Tests | four suites, all passing: `npm test` |
+| Real data | the timesheet export and the `weekly job costs/` folder sit in the working directory, gitignored. The tests find them **by content, not by name** (§7), so a re-download under any name still gets checked |
+| Profiled | both exports. Nothing in the app is fed by a guessed schema |
 
 ### Running it
 
@@ -67,9 +68,9 @@ shell may not pick that up, so prefix commands with
 ### Things that will bite you
 
 - **Never commit company data.** Exports (`*.xls`/`*.xlsx`/`*.csv`) and UI
-  screenshots (`*.png`/`*.jpg`) are gitignored. The real
-  `ScheduledProdRptDtl.xls` sits in the working directory and must stay there.
-  Check `git status` before every commit.
+  screenshots (`*.png`/`*.jpg`) are gitignored. The real exports sit in the
+  working directory and must stay there. Check `git status` before every
+  commit.
 - **You cannot see the UI.** There is no browser automation here. Say so rather
   than implying a change was visually checked (§7).
 - **Deploys are manual and the check must match the new bundle hash** — polling
@@ -82,15 +83,6 @@ shell may not pick that up, so prefix commands with
   replaceable on its own. Don't "simplify" it back to `useDataset` (§13).
 - **My Projects is app-wide, in `core/`** — one starred list scoping every
   module. It is not a job-cost feature any more; don't re-key it per module (§14).
-- **Two reports agreeing on job numbers do not agree on dates.** The schedule
-  and the missing-ticket report are pulled separately and routinely cover
-  different months. An unflagged board means "everything is drawn" *only* when
-  the ticket report covers the same dates — which is why coverage is computed
-  and stated rather than assumed (§11).
-- **The schedule export has no unique piece id.** Not `Cast No.`, not
-  `CTRL Num`, not `Pour No.`, not all of them together. Anything comparing two
-  uploads must key on job number + piece mark and align repeated instances by
-  date (§11). Don't reach for an id column; they were all checked.
 - **Every `$/SF` rate divides by the job square footage**, never by the area cast
   to date. Getting this wrong produces a rate that can't be compared to a budget
   (§13).
@@ -132,22 +124,22 @@ shell may not pick that up, so prefix commands with
   components.** The split is what lets the routing rules be tested in node,
   which cannot load `.jsx`. Adding a section means editing both (§15).
 - **Datasets are app-wide** (`src/app/AppData.jsx`), not owned by whichever
-  module got them first. The job page and Home need all of them at once, and
-  the board and the movement report *must* share one `diff` because `byRow` is
-  keyed on the row objects themselves (§11).
-- **Tabs are links, and the whole hash is parsed.** `#/production/board`,
+  module got them first. The job page, Projects and Home need both at once.
+- **Tabs are links, and the whole hash is parsed.** `#/cost/codes`,
   `#/job/43134/cost`. Don't reintroduce tab state in a section (§15).
-- **Piece detail is deliberately *not* routed.** There is no stable piece id in
-  the export (§11), so there is nothing to put in a URL. Job, person and
-  timesheet-job drill-downs are routed; the piece and day panels are not.
+- **`#/production` and `#/drawings` are aliases to Home**, which says in one
+  line that those moved to other tools. Keep the aliases; bookmarks outlive
+  sections. `dropRetiredRecords` in `core/store.js` deletes their old IndexedDB
+  records on startup; keep that too, it is a no-op once they are gone.
 - **`Location` in the time export is the person's *office*, not the job's
   plant.** Profiled: 0 of 110 people sit at more than one, while 82 of 267 jobs
   are charged from several. Do not alias it to "plant" and do not run it through
   `job-cost/plants.js` (§12).
-- **All four exports carry the job number in `"<no> - <title>"`.** The
-  whitespace-around-dash rule in `splitJob` is load-bearing in *two* schemas
-  now — the time export is 19.2% `00-*` admin jobs, and an unspaced match
-  collapses them onto one key (§12).
+- **Both exports carry the job number**, and the timesheet writes it as
+  `"<no> - <title>"`. The whitespace-around-dash rule in `splitJob` is
+  load-bearing: the time export is 19.2% `00-*` admin jobs, and an unspaced
+  match collapses them onto one key (§12). It was first found in the retired
+  production schema; its test now lives against the timesheet.
 
 ---
 
@@ -159,11 +151,11 @@ system's own reporting doesn't give them.
 
 **Two source systems feed it, and they are not the same product:**
 
-- **Concrete Vision** — the ERP the company runs on: employee time, production,
-  scheduling. Three exports feed the app today — the Scheduled Production
-  Report, the Missing Piece Mark Ticket report and the employee time export.
-  Flat tables go through the schema-driven parser in `core/parse.js` (§4); the
-  ticket report is a grouped report with its own walker (§11).
+- **Concrete Vision**: the ERP the company runs on: employee time, production,
+  scheduling. One export feeds the app: the employee time export, a flat
+  table read by the schema-driven parser in `core/parse.js` (§4). The
+  schedule and missing-ticket exports fed Production and Drawings until those
+  were retired on 2026-09-25 (§11).
 - **The cost system** — a separate product that issues the weekly job cost
   reports, one workbook per plant. Its export is a *formatted report*, not a
   table, and has its own parser (§13).
@@ -173,12 +165,13 @@ the job and why every join is on the job *number*, never the name (§13, §15). 
 from one system holds in the other; the two write job names, plant names and
 quantities differently, and every place they disagree is documented.
 
-Four exports, six sections. The mapping is not one-to-one on purpose: a section
-answers a question and reads whichever sources that question needs (§15).
+Two exports, four sections. The mapping is not one-to-one on purpose: a
+section answers a question and reads whichever sources that question needs
+(§15).
 
-**All four have been profiled against real files, and all four carry the job
-number in the same `"<number> - <title>"` shape.** That is what lets every one
-of them join, and it is the reason the app is organised around the job.
+**Both have been profiled against real files, and both carry the job number.**
+That is what lets them join, and it is the reason the app is organised around
+the job.
 
 This started as a single-file React dashboard (`legacy/eng_time_dashboard.html`,
 kept for reference). That file is the origin of the visual language and the
@@ -215,14 +208,14 @@ src/
   App.jsx                      shell: header, hash route, error boundary (§15)
   styles/theme.css             ALL styling — design tokens + component classes
   core/                        framework-free logic, no JSX, node-importable
-    calendar.js                month-grid date math (weeksOf / monthsIn)
     csv.js                     RFC 4180 CSV reader (hand-rolled, dependency-free)
     idb.js                     IndexedDB wrapper (dependency-free)
     parse.js                   schema-driven ingest: coercion, column mapping
     aggregate.js               groupBy / rollup / cumulativeSeries / topNWithOther
     routing.js                 hash-route parsing — the WHOLE hash (§15)
     appData.js                 the app-wide data context + useAppData (§15)
-    store.js                   useDataset — one import per key, IndexedDB
+    store.js                   useDataset: one import per key, IndexedDB;
+                               dropRetiredRecords for the retired sections
     library.js                 useLibrary — multi-source persistence (see §13)
     persisted.js               usePersistedState — one small saved preference,
                                with read-forward migration from older keys
@@ -241,11 +234,11 @@ src/
     FileImport.jsx             ImportPrompt (empty state) + ImportButton
     Filters.jsx                FilterBar — date window + dimension selects
     MyProjects.jsx             the star, the All / My Projects switch (§14)
-    MonthCalendar.jsx          month grid; cells keyed by ISO date
+    IngestSummary.jsx          rows kept out of rows offered, per import (§4)
+    ScopeNotice.jsx            states what is narrowing a pool (§14)
     charts/
       LineChart.jsx            multi-series time lines, crosshair, table view
       BarChart.jsx             ranked horizontal bars
-      ColumnChart.jsx          vertical per-day columns
       scale.js                 niceTicks / sampleTicks / linear
   modules/
     sections.js                THE section list — plain ESM, node-importable
@@ -255,23 +248,14 @@ src/
     job/                       ONE JOB across every source (§15)
       assemble.js              the gather — pure ESM, node-importable
     projects/                  the unified job list
-      rows.js                  the cost + schedule + drawings merge — pure ESM
-    production/                the schedule (§11)
-      board.js                 planning-board column math (plain ESM)
-      metrics.js               the pieces/SF/CY/LF measure list
-      ticketParse.js           the Missing Piece Mark Ticket walker — pure ESM
-      ticketFile.js            File -> ticket source; owns its lazy SheetJS import
-      tickets.js               the join to the schedule, and coverage (plain ESM)
-      movement.js              upload-to-upload schedule diff (plain ESM)
-      views/TicketImport.jsx   ticket import controls + the coverage notice
-    drawings/                  the missing-ticket queue (§11)
+      rows.js                  the cost + time merge, pure ESM
     job-cost/                  weekly job cost by plant (see §13)
       parse.js                 the report walker — pure ESM, node-importable
       importFile.js            File -> source; owns the lazy SheetJS import
       schema.js                field catalog for the detail view (NOT a
                                core/parse.js schema — this export isn't flat)
       categories.js            cost-code prefix -> category
-      plants.js                cost plant <-> Concrete Vision plant aliases
+      plants.js                the known cost plants (filename rescue)
       squarefeet.js            job square footage and every $/SF rate
       engineering.js           the D&E roll-up: budget, hours, design progress
       jobMetrics.js            deriveJob — the fields every view expects
@@ -279,21 +263,20 @@ src/
     employee-time/             timesheet analysis, routed at #/time (§12)
 scripts/
   make-sample.mjs              generates the synthetic employee-time CSV
-  make-production-sample.mjs   generates the synthetic production CSV
+  find-export.mjs              locates a real export by its content (§7)
   smoke-test.mjs               employee-time + core data layer + ROUTING,
                                the project merge and the job gather (§15)
-  production-test.mjs          production schema, board columns, calendar grid,
-                               ticket walk + reconciliation + the schedule join
-  production-ticket-sample.mjs synthetic missing-ticket report, built in memory
   job-cost-test.mjs            job cost parse, reconciliation, $/SF, D&E
   job-cost-sample.mjs          synthetic job cost workbooks, built in memory
-  storage-test.mjs             IndexedDB persistence (fake-indexeddb)
+  storage-test.mjs             IndexedDB persistence (fake-indexeddb),
+                               including the retired-record cleanup
   render-test.jsx              server-renders every view against the samples
   deploy-pages.sh              manual gh-pages deploy (see §8)
   pages-deploy.workflow.yml    the Actions workflow, parked until scope (see §8)
 samples/*.sample.csv               synthetic, safe to commit
 legacy/eng_time_dashboard.html     the original single-file tool; reference only
 docs/interface-proposal.md         the IA rework this structure came from
+docs/cost-and-time-focus.md        the retirement of Production and Drawings
 ```
 
 ### The layering rule
@@ -331,9 +314,9 @@ modules/<id>/
   index.jsx          entry component — takes { tab, params, route }, renders views
   use<X>Filters.js   filter state and the derived filtered rows
   views/*.jsx        one file per tab or drill-down screen
-  *.js               any pure helper the views share (production has board.js
-                     for column math and metrics.js for its measure list;
-                     projects has rows.js; job has assemble.js).
+  *.js               any pure helper the views share (job-cost has
+                     squarefeet.js and engineering.js; projects has rows.js;
+                     job has assemble.js).
                      Keep these as plain ESM — the test scripts import them
                      directly in node, which cannot load .jsx.
 ```
@@ -369,7 +352,8 @@ A new file is a new **source**, not necessarily a new section:
    how a warning reaches the whole app instead of one tab.
 3. Add its import controls to `modules/sources/index.jsx`.
 4. Decide which section reads it. Two reports that answer different questions
-   get two sections, as the schedule and the ticket report do (§11).
+   get two sections, as the schedule and the ticket report did before they
+   were retired (§11).
 
 ### Adding a tab or measure to a section that already exists
 
@@ -380,12 +364,12 @@ Most work is this. The shape that has held up:
    wrong on the first attempt was wrong because it was inferred rather than
    checked, and every one was caught by printing actual cells.
 2. **Put the arithmetic in a plain `.js` file in the section** —
-   `engineering.js`, `squarefeet.js`, `board.js`, `projects/rows.js` and
+   `engineering.js`, `squarefeet.js`, `projects/rows.js` and
    `job/assemble.js` are the models. It must be importable by node so the
    arithmetic can be tested without a browser or a build.
 3. **Add the tab to `sections.js`** and render it in the section's `index.jsx`.
-   Filters are shared; a tab that needs its own control owns it (the production
-   board owns its plant picker, Drawings owns its bed-date buckets).
+   Filters are shared; a tab that needs its own control owns it (the Cumulative
+   view on Time owns its split picker).
 4. **Test the arithmetic, not the markup.** Assert that breakdowns sum back to
    the same total, that no figure is `NaN`/`Infinity`, and that a rate divides
    by what you think it does — see the `$/SF` invariant in §13, which is the
@@ -409,7 +393,7 @@ Most work is this. The shape that has held up:
   not and is **named in a warning** rather than read as data. Every skipped
   sheet is stated; silence is what let this hide.
 - **The import states what it took in**, via `components/IngestSummary.jsx` on
-  Time and Production: rows kept out of rows offered, from how many sheets. It
+  Time: rows kept out of rows offered, from how many sheets. It
   is a quiet hint when everything was read and an amber notice when it was not
   — "did it count all of it?" must be answerable from the page, not only from a
   test script. `meta` carries `recordsRead`, `dropped`, `sheetsRead` and
@@ -449,10 +433,14 @@ Most work is this. The shape that has held up:
 
 `useDataset(key)` keeps the last import in **IndexedDB** under
 `cv.analysis.<key>.v1`, via the dependency-free wrapper in `core/idb.js`. The
-keys are unchanged from when each module owned its own record — `production`,
-`production-tickets`, `production-baseline`, `employee-time`, and the job cost
-library — but every one of them is now created once in `src/app/AppData.jsx`
-and read from the context (§15).
+keys are unchanged from when each module owned its own record
+(`employee-time` and the job cost library), but both are now created once in
+`src/app/AppData.jsx` and read from the context (§15).
+
+The retired sections' records (`production`, `production-tickets`,
+`production-baseline`) are deleted on startup by `dropRetiredRecords`, so a
+browser that once held a schedule does not carry it forever. `test:storage`
+asserts that exactly those three go and nothing else does.
 
 **Do not move this back to `localStorage`.** That was the original choice and it
 was wrong: localStorage caps at ~5MB per origin and holds strings only, so every
@@ -527,9 +515,8 @@ scanline and bloom overlays — carried over from the original tool.
 ## 7. Testing
 
 ```bash
-npm test                # all five suites; the deploy script gates on this
+npm test                # all four suites; the deploy script gates on this
 npm run test:data       # core/ logic in plain node — fast, no build
-npm run test:production # production schema, derivations, calendar grid
 npm run test:jobcost    # job cost parse + reconciliation (see §13)
 npm run test:storage    # IndexedDB persistence, against fake-indexeddb
 npm run test:render     # server-renders every view against the sample data
@@ -551,17 +538,18 @@ nothing announces that it went away.
 `findExport({ hint, identify })` ranks the workbooks in the directory (newest
 first, name hints promoted) and then **opens them until one is identified by
 content**. `headerSignature` is the identifier: the columns that make an export
-*that* export — `Bed Date` + `Piece Mark` is the schedule, `Job Num` +
-`Drawn By` is the ticket report, `Effective Date` + `Deptment` is the
-timesheet. A schema's required set is not enough on its own, because
+*that* export: `Effective Date` + `Deptment` is the timesheet. (The retired
+schedule and ticket exports had signatures of their own; the job cost reports
+are found by folder, not by signature.) A schema's required set is not enough on its own, because
 `core/parse.js` falls back to substring containment and two exports both
 carrying a date and a job name can satisfy each other's schema. Every run
-prints the file it used and says whether the name or the content found it. All
-three real exports resolve correctly when renamed to `aaa.xls`, `bbb.xlsx` and
-`zz-random-name.xls` in one directory — that is the test of it.
+prints the file it used and says whether the name or the content found it.
+When there were three flat exports, all three resolved correctly when renamed
+to `aaa.xls`, `bbb.xlsx` and `zz-random-name.xls` in one directory; that was
+the test of it.
 
-It also **reconciles the hours**, the same way the job cost and ticket walkers
-reconcile their totals: the sheet's own `Hours` column must sum to the parsed
+It also **reconciles the hours**, the same way the job cost walker reconciles
+its totals: the sheet's own `Hours` column must sum to the parsed
 total, *and* to the same figure person by person, with every person surviving
 ingest. That is the check that answers "is Time under-counting somebody?"
 mechanically — every per-person figure in the section is `groupBy(name)` +
@@ -572,26 +560,7 @@ an absent one. Note the two claims are separate: `isEmptyRow` drops zero-hour
 rows, which conserve a sum by definition. The counts it prints — rows, people, job numbers, hours, the
 admin share — move between pulls and are printed rather than asserted.
 
-`test:production` also runs against the **real** `ScheduledProdRptDtl.xls` and
-`MissingPieceMarkTicket.xlsx` when those files happen to be sitting in the
-working directory. They are gitignored, so CI only ever sees the synthetic
-samples — but locally they are the check that matters most.
-
-It also runs a **simulated re-upload** at real scale: the previous export is
-manufactured by shifting a known share of pieces by a known number of days, so
-the diff's answers are checked against figures the script chose rather than
-merely inspected. The alignment itself is checked against an exhaustive search
-over every order-preserving matching.
-
-For the ticket report it asserts the same **reconciliation** the job cost suite
-does: every plant and job banner's declared piece count must equal the rows
-walked under it, and the grand total must equal the rows read. A walker that
-mis-classifies a banner as a detail row (or the reverse) shows up immediately as
-a count that no longer adds up. It then **prints** the join figures — how many
-scheduled pieces are flagged, how many ticket rows fall inside the schedule's
-window — because those move every time either report is re-run.
-
-`test:jobcost` does the same with the `weekly job costs/` folder. It also
+`test:jobcost` runs against the real `weekly job costs/` folder when it is present. It also
 **prints** the headline figures §13 quotes — job counts, hours, blended rates,
 lump-sum line counts, the hours-agreement share and the `$/SF` rates — so a
 session can see at a glance whether the documented numbers have drifted from the
@@ -615,12 +584,12 @@ It also covers the timesheet job number — `splitJob`, including the `00-*`
 admin cases the whitespace rule protects (§12) — and the shell (§15), which is
 why `modules/sections.js` is plain ESM:
 
-- **Routing** — a stale bookmark falls back to something real rather than a
+- **Routing**: a stale bookmark falls back to something real rather than a
   blank page; the job page's id precedes its tab (`#/job/43134/cost`); segments
   a section takes for itself survive encoding; every section's bare route
-  resolves to its own first tab.
-- **The project merge** — one row per job number, a cost-only and a
-  schedule-only job both present, and **a rate with no denominator is `null`,
+  resolves to its own first tab; `#/production` and `#/drawings` alias to Home.
+- **The project merge**: one row per job number, a cost-only and a
+  time-only job both present, and **a rate with no denominator is `null`,
   never `0`**.
 - **The job gather** — each source found separately, and the timesheet join an
   equality match on the derived job number (`1000` must not match `100`).
@@ -628,7 +597,9 @@ why `modules/sections.js` is plain ESM:
 `test:storage` runs the real IndexedDB code path against `fake-indexeddb` and
 asserts that a dataset far larger than the localStorage cap saves and reloads
 intact. Keep the oversized case — it is the regression guard for the bug that
-motivated the switch.
+motivated the switch. It also asserts that `dropRetiredRecords` removes the
+three retired records and leaves the timesheet, the cost library and the
+starred list alone.
 
 `test:render` mounts every view — plus empty, single-row and unknown-key
 datasets — and asserts the chart actually emitted geometry. It catches broken
@@ -640,14 +611,14 @@ screenshot or click the UI. When a change affects layout, spacing, color or
 interaction, **say plainly that it was not visually verified** and ask the user
 to look at `npm run dev`. Do not imply otherwise.
 
-The render suite has still caught real browser bugs — it found `Schedule`
-passing `month === null` to the calendar on first render, which threw in Chrome
-too. Treat a render failure as a real defect until proven otherwise.
+The render suite has still caught real browser bugs: it once found the (now
+retired) production calendar being passed `month === null` on first render,
+which threw in Chrome too. Treat a render failure as a real defect until
+proven otherwise.
 
 Where new tests go: `core/` logic, routing, the project merge or the job gather
-→ `smoke-test.mjs`; production schema, board, calendar, missing-ticket or
-schedule-movement logic → `production-test.mjs`; job cost parsing, cost-code
-classification or plant aliasing → `job-cost-test.mjs`; a new view → a case in
+→ `smoke-test.mjs`; job cost parsing, cost-code classification or the
+known-plant list → `job-cost-test.mjs`; storage rules → `storage-test.mjs`; a new view → a case in
 `render-test.jsx`, including its empty and single-row states. A section that
 reads `useAppData` gets its case wrapped in the `withApp(...)` fixture there,
 with a second case against `appEmpty` — "no file loaded" is a state each of
@@ -717,6 +688,13 @@ delete the `gh-pages` branch, and drop `scripts/deploy-pages.sh` plus the
   `ratio`, `perSf`, `sqft` — never a raw `toFixed` in a component. Note `ratio`
   formats a stored ratio (`0.7752` → `"77.5%"`) while `pct` divides a part by a
   total; using the wrong one is off by a factor of the total.
+- **Detail views are exhaustive by design.** List **every** field whether or
+  not it has a value, so "blank for this record" is visibly distinct from "not
+  in this report". Where a stored value is derived, show its source text too,
+  so no derivation hides the original. Render `row.extra` after the named
+  fields, and give the panel a "show fields that are empty" toggle defaulting
+  to **on**, because completeness is the point. (Written for the retired
+  piece detail; `JobDetail` and the Time drill-downs follow it.)
 - Dates are ISO `YYYY-MM-DD` strings everywhere in the data layer. They sort
   lexicographically, which is why filters and grouping compare them directly.
   Use `isoToDate` when a real `Date` is needed — it parses to **local** midnight,
@@ -737,46 +715,14 @@ company, the second can be picked up now.
       fractional — but it holds on only 56% of lines individually. Confirm with
       whoever owns the report. If it is not hours, only the hours section of the
       D&E tab needs relabelling; no cost figure depends on it (§13).
-- [ ] **Shop status is still the biggest gap in production.** CV's planning view
-      colour-codes cards by workflow state and the schedule export carries none
-      of it. The Missing Piece Mark Ticket report supplied *one* of those
-      signals (§11) — is there a report carrying the rest: pour-sheet flags,
-      wood/steel shop completion, bed verified? That would make the board a
-      replacement rather than a read-only echo.
-- [ ] **What do the drafting groups on the ticket report mean?** The job banner
-      carries `Gate - Bre`, `Gate - Ash`, `Gate - Kis`, `Gate - Win` and `UA`.
-      They look like offices or outsourcing vendors. Surfaced verbatim and
-      labelled "Drafting group" rather than interpreted (§11).
-- [ ] **Why is `Drawn By` blank on 177 of 213 ticket rows?** Unassigned work, or
-      a field the report only fills in some circumstances? It is treated as
-      "nobody assigned" and given its own bucket, which is the reading that
-      matters if it's right and visible if it's wrong (§11).
-- [ ] **Two ticket rows have bed dates in 2023** and still have no drawing.
-      Genuinely overdue, cancelled pieces still on the report, or a data
-      artifact? Surfaced as their own urgency bucket until someone says (§11).
-- [ ] **Is there any stable per-piece identifier in Concrete Vision?** It would
-      also make piece detail addressable — it is the one drill-down that is not
-      routed, because there is nothing stable to put in the URL (§15). The
-      schedule export has none (§11), which forces the movement comparison to
-      align repeated marks by date. If `Cast No.` is in fact a stable database
-      id that merely repeats within one export for another reason, the matcher
-      could be exact instead. Worth asking whoever owns the report — it is the
-      single change that would most improve the Moved tab.
 - [ ] **Monroeville reports no quantity rows at all** — no pieces, no square
       feet, across all 15 jobs. Every other plant has them. A setting, or does
       that plant genuinely not track them? Until answered, its $/SF and design
       columns show "—" rather than a misleading zero.
-- [ ] **Jacksonville and Pearland have production but no cost report.** Confirm
-      one exists before assuming those jobs are simply uncosted (`plants.js`).
 - [ ] What are the `-IN` companion jobs (`42343-IN`, `44050-IN`)? 11 of 126,
       never scheduled, titles suffixed `(EX)` — erection contracts, most likely.
       Kept as distinct jobs; if they should roll into their base job that is a
       change to the join in §13.
-- [ ] Confirm the column names in Concrete Vision's **plan vs actual**
-      (scheduling) export. The list on Home is still a guess. Once confirmed it
-      returns as a Production tab, not as a section of its own (§15).
-- [ ] What does the `(RL)` suffix on a piece mark mean, and what are the 51
-      zero-quantity rows that still carry a mark? Passed through untouched.
 - [ ] Does the employee time export carry a pay-rate or cost column? The
       profiled export does **not** — 11 columns, no money (§12). Decide first
       whether pay data should sit in a browser cache at all. Note the job cost
@@ -799,8 +745,6 @@ company, the second can be picked up now.
       (is 49-8300 the same work as 60.x?) is a question for whoever owns both
       reports. `costPerHour` is computed in `projects/rows.js` and shown
       nowhere until that is answered.
-- [ ] Does CV export actuals and labor estimates per bed-day? CV shows Est/Act
-      pairs and a Total Emp row that the current export lacks (§11).
 
 ### Could be built now
 
@@ -820,6 +764,10 @@ company, the second can be picked up now.
       and carries the job number in `"<no> - <title>"`, parsing on 100.0% of
       rows. Time now joins on the job number like every other source and takes
       part in My Projects (§12, §14).
+- [ ] **Cost vs Hours.** The natural successor to the retired Cost vs
+      Schedule tab: 60.x D&E cost against timesheet hours, per job. Deferred
+      until the D&E question above is answered, because building it first
+      would imply the two reconcile (`docs/cost-and-time-focus.md`).
 - [ ] **Merging exports that cover different date spans.** Loading a second one
       currently replaces the dataset. Merging needs a dedupe key — probably
       date + person + job + task. IndexedDB has the headroom.
@@ -831,411 +779,43 @@ company, the second can be picked up now.
 
 ### Settled, kept for the reasoning
 
-- [x] Column names in the **production** export — profiled 2026-08-24 (§11).
+The production and ticket questions (shop status, drafting groups, blank
+`Drawn By`, stale bed dates, a stable piece id, the `(RL)` suffix, plan vs
+actual) closed with the retirement on 2026-09-25 rather than with an answer.
+They are in `CLAUDE.md` at commit `ca57d86` if either section ever returns.
+
 - [x] Column names in the **job cost** export — profiled 2026-08-26 (§13).
-- [x] Shape of the **Missing Piece Mark Ticket** export — profiled 2026-08-31.
-      A grouped report, not a flat table; its own walker (§11).
-- [x] Ticket ↔ schedule join — on job **number + piece mark**, never the bed
-      date: the two reports carry their own and they disagree on every
-      overlapping piece (§11).
-- [x] Whether two reports' date ranges overlapping means they cover the same
-      work — **no**. Measure it in rows, not endpoints; two stale rows made a
-      pair of reports sharing nothing look like a 31-day overlap (§11).
-- [x] Whether the schedule export carries a unique row or piece id — **no**,
-      every candidate checked and tabulated (§11). Don't look again.
-- [x] How to compare two uploads without one — job number + piece mark, with
-      repeated instances aligned by minimum total movement (§11).
-- [x] Cross-module join — cost↔production on job **number**, not name (§13).
+- [x] Cross-module join: on job **number**, never name (§13). It was
+      cost↔production first; it is cost↔time now.
 - [x] What `$/SF` should divide by — the job square footage, never area cast to
       date (§13). Getting this wrong produces a rate that cannot be compared to
       a budget.
-- [x] `Cert` is empty in every production row seen so far. Mapped anyway, so
-      values appear if it ever carries any.
 
 ---
 
-## 11. Production module
-
-Built from a real export: **`ScheduledProdRptDtl.xls`** ("Scheduled Production
-Report — Detail"), profiled 2026-08-24. It is **forward-looking**: a month of
-*scheduled* pours, not actuals. Language in the UI says "scheduled", never
-"produced".
-
-### The export
-
-Genuine legacy BIFF `.xls` (not HTML-in-disguise, which ERP exports often are),
-one sheet, 20 columns, 4,358 rows covering 2026-08-01 → 2026-08-31.
-
-| Column | Field | Notes |
-|---|---|---|
-| Plant | `plant` | 7 values |
-| Bed Date | `date` | the pour date; 26 dates, Mon–Sat, no Sundays |
-| Bed Name | `bed` | 131 beds; **plant-scoped** — no name is shared across plants, but key by plant+bed anyway |
-| Leadman | `leadman` | sparse (626/4358) |
-| Phase | `phase` | `"N - Name"`; blank on non-pour rows |
-| Mold | `mold` | sparse (210/4358) |
-| Piece Mark | `mark` | 1,617 distinct; some carry an `(RL)` suffix |
-| Qty | `qty` | **only 0, 1 or 2** — sum it for a piece count, never count rows |
-| Total SF / CY / LF | `sf` `cy` `lf` | square feet, cubic yards, linear feet |
-| Pos | `pos` | position on the bed |
-| Cert | `cert` | empty in every row of the sample export, but mapped anyway |
-| Job Name | `job` | `"NNNNN - TITLE"` for 60 of 63 — parse defensively |
-| Bed Comment | `comment` | carries literal HTML (`<b>Bed Comment:</b> `) and an `N/A` sentinel; both stripped |
-| Prd Code | `prdCode` | |
-| Cross Section | `crossSection` | |
-| Cast No. / CTRL Num / Pour No. | `castNo` `ctrlNum` `pourNo` | identifiers, kept as strings |
-
-### Grain and the modeling decisions
-
-One row = **one scheduled piece on one bed on one date at one plant**.
-
-- **The bed-day is the calendar unit** — 1,765 of them. A bed-day is *not* a
-  single pour: 347 carry more than one `Pour No.` and 128 span more than one
-  job. Never assume bed+date is one pour or one job.
-- **832 rows have `qty = 0`**, and those rows carry zero SF, CY and LF without
-  exception. 781 have no piece mark and a comment like *"Bed Maintenance: Build
-  New Mold"* — these are **bed activity, not production**, and they are
-  **kept, not dropped**: an occupied bed is real schedule information. They are
-  flagged `isPour: false` and shown distinctly. The remaining 51 carry a mark
-  but zero everything; treated the same way pending an answer in §10.
-- `isEmptyRow` therefore drops a row only when it has no date, plant or bed —
-  **never on `qty === 0`.**
-- Up to 31 pieces land on a single bed-day, so a calendar cell must summarize
-  rather than list everything.
-
-### Views (`modules/production/views/`)
-
-| File | Tab | What it shows |
-|---|---|---|
-| `PlanningBoard.jsx` + `PieceDetail.jsx` | **Board** | The primary view — a bed × day planning grid modeled on Concrete Vision's own Production Planning screen (`fpProdPlanningView.cfm`). Beds down the side, every calendar day across the top, cells holding `<job no> <piece mark>` cards. Per-day totals across the top (pours, pieces, CY, SF); per-week totals interleaved after each Sunday, and per-bed week totals in the same columns. Clicking a card opens every field the export carries for that piece. |
-| `Schedule.jsx` + `DayDetail.jsx` | **Calendar** | Month calendar, one cell per day, filtered to a plant. Cell shows the selected metric (pieces / SF / CY / LF) with a sequential heat wash and the busiest beds. Click a day → day detail: every bed, its pieces, and its comments. |
-| `Overview.jsx` | **Charts** | Stat tiles, daily scheduled volume as a column chart, cumulative volume through the month, top jobs and plant comparison as ranked bars. |
-| `Beds.jsx` | **Beds** | Utilization per bed: days scheduled, pieces, SF, CY, and idle days in the window. |
-| `Jobs.jsx` | **Jobs** | Per-job rollup — pieces, SF, CY, date span, plants involved. |
-| `Pieces.jsx` | **Pieces** | The searchable, sortable detail table, capped at 300 rows a page. |
-| `Movement.jsx` + `BaselineBar.jsx` | **Schedule Changes** | What moved since the previous upload — see below. Only offered once a baseline exists. |
-
-Two things that used to be tabs here have moved, because they were different
-jobs sharing a tab row (§15):
-
-- **Tickets → the `drawings` section.** The missing-ticket queue is the first
-  thing an engineering manager opens; it was the seventh of eight tabs. Its
-  three tables are now its three tabs (Queue / By Job / By Drafter) and the
-  bed-date urgency buckets are a control above them. `TicketImport.jsx` keeps
-  the import controls and `CoverageNotice` here, beside the parser.
-- **Jobs → the `projects` section**, merged with the job cost table into one
-  row per job number.
-
-What the ticket report still does *here* is mark the board.
-
-Filters shared across tabs: date window, plant, job. The app-wide **My
-Projects** scope (§14) narrows the row pool before any of them, and its switch
-is in the shell header rather than in this filter row (§15). **Board and
-Calendar own their own plant picker** (it drives what they render), so the
-shared filter row omits plant on those two tabs rather than showing two controls
-for one thing. Schedule Changes is scoped by job rather than by bed or day, so
-it omits the date window.
-
-### Shared components this adds
-
-- `components/MonthCalendar.jsx` — generic month grid taking
-  `{ date, value, label, detail }` cells. Lives in `components/`, not the
-  module, because the Schedule module will want the same grid.
-- `components/charts/ColumnChart.jsx` — vertical time bars for per-day
-  magnitude. Discrete days are columns; `LineChart` stays for accumulation.
-
-The calendar heat is a **sequential** encoding — one hue, low values near the
-surface, high values bright — not the categorical palette. Categorical slots
-still apply where series are compared (jobs, plants).
-
-### What building it turned up
-
-- **Derive, don't sync.** `Schedule` originally set its visible month in a
-  `useEffect`. Effects don't run on the first render, so the calendar received
-  `month === null` and threw — in the browser, not just under test. Month and
-  selected day are now **derived during render** from the data, which also keeps
-  them valid for free when a filter drops them out of range. Prefer derived
-  state to an effect that syncs one piece of state to another.
-- **`core/` must stay node-importable.** `monthsIn`/`weeksOf` were briefly
-  defined inside `MonthCalendar.jsx`, which made them unreachable from the test
-  scripts — plain node cannot import `.jsx`. They live in `core/calendar.js`
-  now. The layering rule in §2 exists for exactly this.
-- **A module renders `null` until its dataset resolves**, so `render-test.jsx`
-  marks module-level cases `allowEmpty` — the assertion there is "must not
-  throw", not "must produce output".
-
-### The planning board, versus Concrete Vision's
-
-The board deliberately mirrors CV's Production Planning view — same axes, same
-`<job no> <piece mark>` cards, same per-day and per-week totals — because that is
-the layout the schedulers already read. Verified against a screenshot of the live
-view: Ashland City, Pad 2, Wed 08/26 shows `43134 RM101` twice in CV, and the
-export produces the same two rows.
-
-**The one thing it cannot reproduce: shop status.** CV tints every card by
-workflow state — Preliminary, Return Leg, Pour Sheets Attached, Pour Sheets
-Revised, Wood Shop Complete, Steel Shop Complete, Embeds Complete, Mesh/Cage
-Complete, Bed Verified/Poured, Missed Pour, Bed Maintenance, Non Prd Day — and
-carries a row of per-stage checkboxes on each card. **None of those fields are in
-the Scheduled Production Report export.** Cards are therefore tinted by a
-dimension the export does have (job, phase or product code), and the UI says so
-in a note under the board. Do not fake these colors, and do not infer status from
-dates. If status is wanted, it needs a different export or a second report — that
-question is in §10.
-
-Also absent from the export and so absent from the board: the **Est/Act split**
-(CV shows estimated against actual for employees, pieces, CY and SF — the export
-carries one set of scheduled figures) and **Total Emp**, which has no column at
-all.
-
-Board specifics worth knowing:
-
-- **Day columns are contiguous**, generated by `daySpan` from the filtered range
-  rather than from the dates present. The export has no Sunday rows; skipping
-  them would close the gap and misrepresent the week. Days with nothing
-  scheduled render as grey `offday` columns.
-- **Week totals close each Monday–Sunday week**, and a range ending mid-week
-  still gets a total for its trailing partial week.
-- **Capped at `MAX_DAYS` (70) columns.** Past that the grid stops being readable;
-  narrow the date filter instead of raising the cap.
-- Cells are looked up from a `Map` keyed `"bedKey|date"`, built once per render
-  pass — 32 beds × 70 days is 2,240 cells, so a linear scan per cell would be
-  quadratic over the row set.
-- Sticky positioning: the bed column pins left, the date header pins to the top
-  of the scroll container, and the corner cell needs both plus a higher
-  `z-index`. The summary rows scroll away by design — pinning five more rows
-  eats too much vertical space on a laptop.
-
-### The Missing Piece Mark Ticket report
-
-A **second export**, from the same Concrete Vision database, profiled
-2026-08-31 from `MissingPieceMarkTicket.xlsx`. It lists every piece with no
-ticket drawing — the thing an engineering manager is on the hook for — and it is
-what lets the board show a piece's drawing status, which the schedule export
-alone cannot (see "versus Concrete Vision's" above).
-
-It is held as its own dataset (`useDataset("production-tickets")`) alongside the
-schedule, because the two are pulled separately and refresh separately. The
-strip, the tab and the board marker are all driven from it.
-
-**It is not a flat table**, so it does not go through `core/parse.js`. It is a
-*grouped report* with its own walker in `ticketParse.js`:
-
-```
-row 0    (blank)(blank) Plant Name | Job Num | Job Name | Piece Mark | Drawn By | …
-row 1    "Ashland City (100 pieces)"                        <- col A, plant banner
-row 2      "43134 - TITLE (Gate - Bre) - 25 pieces"          <- col B, job banner
-row 3        (blank)(blank) Ashland City | 43134 | …         <- detail, from col C
-           "Total Pieces: 25"                                <- col F, subtotal
-           "<strong>Grand Total: 213</strong>"               <- col F, literal HTML
-```
-
-Profile: 1 sheet, 213 pieces, 11 jobs, 4 plants (Ashland City, Hillsboro,
-Kissimmee, Monroeville), bed dates 2023-01-31 → 2026-09-30.
-
-| Column | Field | Notes |
-|---|---|---|
-| Plant Name / Job Num / Job Name | `plant` `jobNo` `jobTitle` | **Every detail row is self-describing** — it repeats its own plant and job, so the banners are not needed to read a row |
-| Piece Mark | `mark` | the join key, with the job number |
-| Drawn By | `drawnBy` | **sparse — 37 of 213**. A blank is not a person: it is a piece with nobody assigned |
-| Length / Width / Depth | `length` `width` `depth` | **feet-and-inches text** (`11'-3 1/4"`). Coerced to a number, `11'-3 1/4"` reads as `11` |
-| Weight / SQFT / CY / LNFT | `weight` `sf` `cy` `lf` | genuine numbers |
-| Bed Date | `date` | Excel serial. **This report's own snapshot** — see the join below |
-| — | `group` | `"Gate - Bre"`, `"UA"` … parsed from the job banner; **exists nowhere else in the file** |
-
-**Banners are parsed, not skipped, and their counts are reconciled.** Every
-plant and job banner declares a piece count, and the walk asserts each equals
-the rows found under it, plus the grand total against the whole. All 11 jobs and
-4 plants reconcile as of 2026-08-31. That is what proves the walker classified
-every row correctly — the same check that makes the job cost figures
-trustworthy (§13) — and it is the only reason the banners are walked at all,
-apart from `group`, which no detail row carries.
-
-#### The join, and the trap in it
-
-**Job number + piece mark. Never the bed date, never the plant.**
-
-- **Both reports carry a bed date and they disagree.** Of the pieces that
-  overlapped in the profiled exports, the two dates matched on **none** — the
-  schedule moves between pulls. A date-sensitive key would silently unflag a
-  piece the moment it was rescheduled, which is exactly when you most want to
-  know its drawing is missing.
-- **Not the plant either.** Job 45154 appears under two plants in the ticket
-  report, and the two systems don't name plants identically anyway (§13).
-- Marks are upper-cased and trimmed before comparison; nothing else is
-  normalised, because the schedule's `(RL)` suffix is part of the mark.
-
-**The trap, and the reason `tickets.js` exists:** the two reports are run over
-whatever ranges someone picked, and in the exports profiled 2026-08-31 those did
-not overlap at all — the schedule covered 2026-08-01 → 2026-08-31 and the ticket
-report 2026-09-01 → 2026-09-30. **0 of 213 ticket rows had a bed date inside the
-schedule's window.** A board flagging nothing would have read as "every
-scheduled piece is drawn" and meant "the ticket report doesn't cover this
-month". `ticketCoverage()` computes that and the UI states it, in red, above
-everything else.
-
-**Measure the overlap in rows, not endpoints.** The report carries two pieces
-whose bed date is years past (2023-01-31, 2023-04-28) and still have no drawing.
-Those two rows alone stretch its *date range* back across the whole schedule
-while every other row sits a month later — so a range-endpoint comparison
-reports a comfortable 31-day overlap for a pair of reports that share nothing.
-`ticketsInWindow` counts rows in range and cannot be fooled that way; the notice
-leads with it. There is a test for exactly this.
-
-Those stale rows are **kept and surfaced**, never dropped: a piece whose pour
-date has already passed and still has no drawing is the most urgent thing in the
-report, not a data error. The Tickets tab buckets by how soon the piece is cast
-— passed / 7 days / 30 days / later — because that ordering is what makes the
-list a work queue instead of an inventory.
-
-#### The board marker
-
-A scheduled piece whose `jobNo|MARK` is in the ticket report gets a red ring, a
-red wash and a **NO TICKET** chip, plus a "Only pieces missing a ticket" filter
-and a running count in the board header.
-
-- **It is an alert, not a category.** The card's left border still carries the
-  "color by" dimension, so the flag has to survive whatever the cards are tinted
-  by — and it must never consume one of the eight validated categorical slots
-  (§5). It is `--critical` plus words, never a palette color, and never color
-  alone.
-- The lookup is built over the **whole** report, not the filtered slice: a piece
-  is missing its drawing regardless of which plant or week is on screen.
-- Flagged rows are computed once per render pass, not per cell. The grid draws
-  thousands of cells and a lookup inside it would be the only quadratic thing on
-  the page.
-- `PieceDetail` gets a "Missing Piece Mark Ticket report" section that names the
-  report it came from, so it can never read as a column the schedule export
-  carries. When the two reports disagree on the bed date, it shows both and says
-  why.
-
-`Drawn By` being blank on 177 of 213 rows is the headline finding for whoever
-owns the drawings, so it gets its own stat tile and its own bucket in the
-by-drafter table rather than being folded into a total.
-
-### Schedule movement, upload to upload
-
-When a new Scheduled Production Report replaces the one already loaded, the old
-dates are kept as a compact snapshot (`production-baseline`) and every piece is
-compared against it: moved up, moved back, added, dropped. Profiled and built
-2026-08-31. `movement.js` holds all of it as plain ESM.
-
-**Clearing the schedule clears the baseline.** A baseline outliving the data it
-described would compare a fresh import against a file nobody remembers loading.
-Asserted in `test:storage`.
-
-#### There is no piece id in this export — every candidate was checked
-
-| Candidate | Distinct over 4,358 rows |
-|---|---|
-| `Cast No.` | 2,347 |
-| `CTRL Num` | 1,343 (and blank on 781 rows) |
-| `Pour No.` | 1,171 |
-| `Cast No.` + `CTRL Num` | 4,328 |
-| `Plant` + `Bed` + `Date` + `Pos` | 3,890 |
-
-**Nothing is unique.** So a row-level join across two uploads is unavailable at
-any price, and the cross-pull stability of those identifiers cannot even be
-tested — there is nothing to test it against. Don't go looking again; this table
-is the result of looking.
-
-What the export does support is a **piece** key: job number + piece mark. 1,669
-such groups, and **1,412 of them (85%) hold exactly one instance**, so for the
-large majority the comparison is exact. The job number is required because 45
-marks are used by more than one job. No group spans more than one plant.
-
-#### Repeated marks, and the alignment
-
-The other 257 groups hold the same mark scheduled several times — up to 99 — a
-piece *type* cast repeatedly rather than one piece. Those instances carry no id
-either, so `alignInstances` matches them by date, choosing the order-preserving
-pairing that **minimises total movement**.
-
-Minimising is the honest reading, and it differs from the obvious shortcut —
-pair by rank, truncate the longer side — exactly where instances were added or
-removed. Old `[Aug 3, Aug 10, Aug 20]` against new `[Aug 10]`: rank pairing
-reports a 7-day slip; the alignment matches Aug 10 to Aug 10, reports nothing
-moved and two instances dropped, which is what the dates actually say. Where the
-counts are equal the pairing is forced and both agree.
-
-Matches are maximised before movement is minimised, so a piece is assumed to
-persist and slide rather than vanish and be replaced — the right default for a
-schedule, where the piece list is stable and the dates are what move.
-
-**The count of moves is not bounded by the change that occurred; the total
-movement is.** Shifting one instance of a repeated mark re-sorts its group, and
-the alignment may then explain the same change as several smaller slides. That
-reports *more* moves while reporting no *more total* movement. A test asserting
-on the count fails here — which is how this was found — so `production-test.mjs`
-asserts on total movement, and the UI says a single reschedule can read as
-several smaller ones. Verified against an exhaustive search: the alignment is
-provably minimal, and over 20,000 randomised cases it never reported more total
-movement than was injected.
-
-#### What the diff returns, and why `byRow` is keyed on the row object
-
-`diffSchedule(baselineRows, currentRows)` returns `moved` / `added` / `removed`
-/ `unchanged`, per-job roll-ups, and **`byRow`, a `Map` keyed by the current row
-object itself**. This is why the diff is computed once in `app/AppData.jsx` and
-shared: the board and the movement report have to be looking at the *same* row
-objects, and two `useMemo`s over the same rows would produce two maps that agree
-on nothing. Within a repeated mark the instances are told apart only by
-their position in the alignment, so any string key would have to encode that
-position and would break the moment two instances shared a date. The board and
-the report both read from the same `rows` array in the same render pass, so
-object identity is exactly the right key and costs no lookup. Don't "clean this
-up" into a string key.
-
-Invariants, all tested: `moved + added + unchanged` accounts for every current
-piece exactly once; `byRow` covers every one and holds no extras; an identical
-re-upload reports zero moved, added and removed; reversing the two sides flips
-every sign. Rows with no piece mark are bed activity, not pieces, and never
-enter the snapshot.
-
-Cost at real scale: 3,577 pieces compared in ~37ms, baseline snapshot ~511KB.
-
-#### On the board
-
-A moved piece gets a `▲3d` / `▼3d` chip, a new one `NEW`. Direction is a glyph
-and a number, never color alone — these sit on cards already tinted by job and
-possibly ringed for a missing ticket, so the status tokens (`--good`,
-`--warning`) are used and no categorical slot is consumed (§5). An unmoved piece
-gets no chip; a zero on every card would make "moved" meaningless.
-
-"Only pieces that moved" and "only pieces missing a ticket" are a **union**, not
-an intersection: ticking both asks "show me anything that needs attention",
-which is how a scheduler reads them. Beds with nothing to show drop out.
-
-#### Visual review status
-
-**The whole interface rework of 2026-08-31 is unreviewed** — the shell header,
-Home, Sources, Projects, the job page, Drawings, and every section's new tab
-row. See §15.
-
-**Nothing added earlier on 2026-08-31 has been looked at either** — the Tickets tab, the
-missing-ticket strip and coverage notices, the board's NO TICKET marker and its
-"only missing" filter, the star column on the production Jobs table, and the
-whole schedule-movement feature (the Moved tab, the "compared against" strip,
-the board's movement chips and "only pieces that moved" filter). There
-is no browser automation here (§7). The board marker is the piece most likely to
-need adjusting: it sits on a card that is already carrying a color-by border, a
-job number, a mark and a metrics line, in a cell that can hold several cards.
-Ask the owner to look at `npm run dev`.
-
-### Detail views are exhaustive by design
-
-`PieceDetail` lists **every** schema field whether or not it has a value, so
-"blank for this piece" is visibly distinct from "not in this report". A field
-whose stored value is derived also shows its source text (`Job Name` shows the
-cleaned title plus the raw `"43134 - 1401 CHURCH STREET"`; `Phase` and
-`Comment` likewise), so no derivation hides the original. `row.extra` is
-rendered after the named fields.
-
-There is a "show fields that are empty" toggle for a compact read, defaulting to
-**on** — completeness is the point of the panel.
-
-Apply the same rule to any future detail view: show the whole record, mark
-empties, never silently omit a field.
+## 11. Production and Drawings (retired 2026-09-25)
+
+**Retired.** The pour schedule and the missing-ticket queue are now covered by
+other tools, so the app no longer reads the Scheduled Production Report or the
+Missing Piece Mark Ticket report. The plan, the list of everything removed and
+the decisions behind it are in `docs/cost-and-time-focus.md`.
+
+This section is kept as a tombstone so that every "§12", "§13" and "§15"
+reference elsewhere still points where it says. To recover the code or the
+full write-up (the export profile, the board, the ticket walker and its
+reconciliation, the schedule-movement alignment), check out commit `ca57d86`,
+tagged `pre-cost-time-focus`.
+
+What survives from it, and where:
+
+- **The whitespace rule in `splitJob`** was found here first, when `00-006` and
+  `00-009` collapsed onto one key. It lives in `employee-time/schema.js` now,
+  and its test moved to the timesheet in both `test:data` and `test:jobcost`.
+- **The "measure it in rows, not endpoints" lesson** from the ticket coverage
+  trap applies to any two exports compared by date: two stale rows can make
+  reports that share nothing look like they overlap.
+- **Old addresses.** `#/production` and `#/drawings` alias to Home, and
+  `dropRetiredRecords` clears the three stored records on startup (§4).
 
 ---
 
@@ -1249,7 +829,8 @@ original name; the section is `time`.
 the last guessed schema in the app. The headline: the inferred schema was
 *right* — every required column mapped on the first try — and the export turned
 out to carry the job number, which is what turned the timesheet join from a
-labelled guess into a real one.
+labelled guess into a real one. With Production and Drawings retired (§11) it
+is one of the app's two sources.
 
 ### The export
 
@@ -1263,7 +844,7 @@ One sheet, a flat table, 11 columns, 29,267 rows covering 2026-01-01 →
 | First Name / Last Name | `firstName` `lastName` | → `name`, the person key |
 | Emp Number | `empNo` | **blank on 46.7% of rows**, covering only 64 of the 110 people. Mapped and shown; never the person key |
 | Location | `loc` | 12 codes — `Kis`, `Hil`, `MDS`, `Ash`, `Oxf`, `Mon`, `Jac`, `Win`, `ARK`, `Pea`, `Atl`, `Corp`. **The person's office, not the job's plant** — see below |
-| Job Name | `job` | `"NNNNN - TITLE"` — **the same shape production uses**; → `jobNo` + `jobTitle` |
+| Job Name | `job` | `"NNNNN - TITLE"`; → `jobNo` + `jobTitle` |
 | GL Code | `gl` | 13 values, `"49-8300 - Architectural Drafting/Eng"` |
 | Labor Task | `task` | 41 values |
 | Deptment | `dept` | 9 values. 92.8% of rows are `ENG - Engineering` |
@@ -1274,8 +855,8 @@ One sheet, a flat table, 11 columns, 29,267 rows covering 2026-01-01 →
 the schema, with correct spellings as aliases. Do not "fix" it.
 
 `isEmptyRow` drops a row with no date, no name, or zero hours. The real export
-contains no zero-hour rows, so nothing is actually dropped — but unlike
-production, a zero here would carry no information.
+contains no zero-hour rows, so nothing is actually dropped, and a zero here
+would carry no information anyway.
 
 ### The job number, and why this export joins
 
@@ -1289,30 +870,25 @@ the My Projects scope in the header, the date/location/department filters, and
 the entry count in the page subtitle first.
 
 **`Job Name` parses to a job number on 100.0% of rows** (29,262 of 29,267; the 5
-that fail carry a title with no number at all, and keep `jobNo: ""`). It is the
-same `"<no> - <title>"` format the schedule uses, so `splitJob` in `schema.js`
-is the production rule copied deliberately, including **the requirement that the
-separator be surrounded by whitespace**.
+that fail carry a title with no number at all, and keep `jobNo: ""`). `splitJob`
+in `schema.js` was copied deliberately from the retired production schema,
+including **the requirement that the separator be surrounded by whitespace**.
 
 That rule is not cosmetic here. **19.2% of all hours sit on `00-*` admin jobs**
 (`00-001 - Corporate Admin Job` … `00-008`), and an unspaced match would cut
 `00-001` in half and collapse every one of them onto a single `00` key. The bug
-that was fixed once in `production/schema.js` would have been far more expensive
-in this export. There is a test for it.
+was fixed once in the retired production schema, and would have been far more
+expensive in this export. There is a test for it.
 
-How far the join reaches, against the reports loaded on 2026-08-31:
+How far the join reaches, against the reports loaded on 2026-08-31: **86 of
+the 266 timesheet job numbers (32.3%) are also in the cost reports.** The rest
+are expected: the cost reports cover **active** jobs only, and 19.2% of hours
+sit on `00-*` admin jobs that no cost report carries.
 
-| | |
-|---|---|
-| timesheet job numbers | 266 |
-| also in the cost reports | 86 (32.3%) |
-| also in the schedule | 59 (22.2%) |
-| in either | 114 (42.9%) |
-| **hours on a job cost or schedule knows** | **73.7% of all hours** |
-| **hours on *project* jobs (excluding `00-*`)** | **89.8%** |
-
-The 145 project job numbers with no cost or schedule record are expected: the
-cost reports cover **active** jobs only and the schedule covers **one month**.
+The profile's hours-coverage figures (73.7% of all hours, 89.8% of project
+hours, on a job some other source knew) counted the schedule as well as cost,
+so they overstate the cost-only join. Re-measure before quoting a cost-only
+share.
 
 ### `Location` is an office, not a plant
 
@@ -1361,7 +937,7 @@ because scoping on a name match would have hidden rows rather than narrowed
 them; that reason is gone.
 
 `useTimeFilters.js` holds the shared date-window / location / department filter
-state, mirroring `useProductionFilters.js`.
+state.
 
 ### Decisions worth keeping
 
@@ -1388,8 +964,9 @@ Active Jobs.xlsx`, one per plant, in the gitignored `weekly job costs/` folder.
 > it. The *reasoning* below does not go stale; the arithmetic does.
 
 **These come from a different system than Concrete Vision.** Same company, same
-jobs, different reporting tool — which is why nothing here reuses the production
-schema and why the join between them (below) is explicit rather than assumed.
+jobs, different reporting tool — which is why nothing here reuses a Concrete
+Vision schema and why the join to the timesheet is explicit rather than
+assumed.
 
 ### The export, and why it needs its own parser
 
@@ -1497,27 +1074,27 @@ by plant**; re-importing a plant overwrites just that entry.
   UI says so above the totals. Do not remove that: a company-wide number mixing
   a 7/31 plant with 8/26 plants is wrong in a way nobody would notice.
 
-### The join to Production
+### The join, now to the timesheet
 
-Job **number**, not job name — the two systems write the name differently
+Job **number**, not job name. The two systems write the name differently
 (`"43134 - 1401 CHURCH STREET"` vs `"43134   1401 CHURCH STREET MOTLEY T1"`) but
-agree on the number. Confirmed against real data: 32 of 63 scheduled jobs have a
-cost report loaded.
+agree on the number. The join was built against the production schedule and
+went with it on 2026-09-25 (§11); the timesheet joins on the same key (§12).
 
-- **Plants do not correspond one-to-one.** CV splits Hillsboro into `Hillsboro`
-  and `Hillsboro Structural`; the cost system bills one Hillsboro. CV also runs
-  Jacksonville and Pearland, which have no cost report at all. `plants.js` is
-  the **only** place that mapping lives — edit it there, nowhere else.
-- **The two datasets answer different questions.** Cost figures are cumulative
-  **to date**; the production dataset is a **forward** month of scheduled pours.
-  The view shows them side by side and says so; they are never summed.
-- Non-matches are shown, not hidden: "scheduled but not costed" (usually a plant
-  whose report isn't loaded) and "costed but not scheduled" (expected — the
-  schedule covers a month, the cost report covers every active job).
-- Fixing this join turned up a real bug in `production/schema.js`: `splitJob`
-  matched its separator without requiring surrounding spaces, so `00-006` and
-  `00-009` both became job number `"00"` — two distinct admin jobs collapsed
-  onto one key. The regex now requires whitespace around the dash. Tested.
+- **The two datasets answer different questions.** Cost is dollars booked to
+  codes, cumulative **to date**; the timesheet is hours booked by people over
+  whatever window it was run for. The job page and Projects show them side by
+  side and say so; they are never summed.
+- **`plants.js` is now just the list of cost plants**, read by
+  `plantFromFileName`. The Concrete Vision plant aliasing it used to hold
+  (Hillsboro vs Hillsboro Structural; Jacksonville and Pearland with no cost
+  report) existed only for the schedule join. The timesheet's `Location` is an
+  office, not a plant, and must never be mapped through it (§12).
+- Fixing the original join turned up a real bug: `splitJob` matched its
+  separator without requiring surrounding spaces, so `00-006` and `00-009` both
+  became job number `"00"`, two distinct admin jobs collapsed onto one key. The
+  regex requires whitespace around the dash, and the rule lives on in the
+  timesheet's `splitJob`. Tested.
 
 ### Views (`modules/job-cost/views/`)
 
@@ -1528,13 +1105,12 @@ cost report loaded.
 | `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
 | `Engineering.jsx` | **Drafting & Engineering** | The role dashboard — see below. |
 | `JobDetail.jsx` | (job page) | The whole report for one job, reproduced. Now a tab of the job page: `#/job/<jobNo>/cost` (§15). |
-| `ProductionLink.jsx` | (Projects) | The join above. Moved to `#/projects/vs-schedule` — it is about the job population, not about money. |
 
-Two tabs left this section for `projects` (§15): the **Jobs** table, merged with
-the production job table into one row per job number, and **vs Production**,
-renamed **Cost vs Schedule**. Nothing in either was dropped.
+The **Jobs** table left this section for `projects` (§15), where it is one row
+per job number with booked hours beside it. **Cost vs Schedule**
+(`ProductionLink.jsx`) was retired with Production on 2026-09-25 (§11).
 
-`JobDetail` follows the §11 rule: every field is listed whether or not it has a
+`JobDetail` follows the exhaustive-detail rule (§9): every field is listed whether or not it has a
 value, subtotals are **recomputed from the lines on screen** rather than read
 from the sheet, and the "show fields that are empty" toggle defaults to **on**.
 
@@ -1601,7 +1177,7 @@ which is why as-bid is $71.03/SF against a budget rate of $54.62.
 Area cast to date is kept as **`sfComplete`**, a progress figure, deliberately
 out of any cost denominator.
 
-**Coverage is partial, and that stays visible.****Coverage is partial, and that stays visible.** 82 of 126 jobs carry footage;
+**Coverage is partial, and that stays visible.** 82 of 126 jobs carry footage;
 **Monroeville carries none at all** (0 of 15). A job without it gets `hasSf:
 false` and **null** rates — never `0`. `perSf()` returns null rather than zero
 precisely so a missing rate renders as a dash and can't be mistaken for a job
@@ -1703,6 +1279,8 @@ hours section, and the whole 2026-08-31 interface rework (§15) — has **not**
 been looked at, and there is no browser automation
 here to check it (§7). The tables that grew most columns are Jobs, the plant
 table and the D&E project table; those are where crowding would show first.
+The 2026-09-25 retirement touched `JobDetail` (the "Scheduled in Production"
+button is gone) and has not been looked at either.
 
 Keep saying plainly which changes were and were not visually verified.
 
@@ -1710,8 +1288,9 @@ Keep saying plainly which changes were and were not visually verified.
 
 ## 14. My Projects
 
-A starred subset of jobs, persisted, scoping **every section** — Projects,
-Production, Drawings, Cost and Time all read the same list. It started as a job-cost feature and moved
+A starred subset of jobs, persisted, scoping **every section**: Projects,
+Cost and Time all read the same list (Production and Drawings did too, until
+they were retired). It started as a job-cost feature and moved
 into `core/myProjects.js` on 2026-08-31, because the same handful of projects is
 what an engineering manager wants to see in all of them: starring a job in one
 place and having to star it again in the next is the thing this avoids.
@@ -1721,8 +1300,8 @@ app-wide state; mounting it inside two sections made it look like a per-section
 filter and made it vanish on the third (§15).
 
 - **Membership is keyed on the job number**, not a plant-scoped key. The number
-  is the project's identity in every system here — it is what the production
-  join matches on (§13) and what the ticket join matches on (§11) — so a star
+  is the project's identity in every system here: it is what the cost report
+  and the timesheet both carry and what they join on (§12, §13), so a star
   survives a plant's report being re-imported or removed, and survives a job
   being costed under a different plant.
 - **One record, `cv.analysis.app.my-projects.v1`**, via `core/persisted.js`. It
@@ -1740,11 +1319,13 @@ filter and made it vanish on the third (§15).
 - **The pickers list only what the scope can show**, so choosing an option never
   lands on an unexplained empty view.
 - **The list is never pruned against the loaded data.** A starred job whose
-  plant is not imported — or which has nothing scheduled this month — is still a
-  project someone picked; dropping it silently would mean re-starring everything
-  whenever a file is removed. Each module reports how many of the selections it
-  cannot currently show, in its own words: job cost says the plant's report may
-  not be imported, production says nothing is scheduled for them.
+  plant is not imported, or which has no hours in the timesheet's window, is
+  still a project someone picked; dropping it silently would mean re-starring
+  everything whenever a file is removed. That includes stars placed on jobs
+  that only ever appeared in the retired schedule: they stay, harmlessly. Each
+  module reports how many of the selections it cannot currently show, in its
+  own words: job cost says the plant's report may not be imported, Projects
+  says no hours are booked to them.
 - **A scoped pool states itself, above the figures**
   (`components/ScopeNotice.jsx`, on Time). §14 guarded against showing
   company-wide numbers under a "My Projects" heading; the opposite failure is
@@ -1769,8 +1350,8 @@ filter and made it vanish on the third (§15).
 
 The star (`StarButton`) and the All / My Projects switch (`ScopeToggle`) live in
 `components/MyProjects.jsx`. A section that lists jobs should mount the star in
-that table — the Projects table, the job page, the cost report's job detail and
-the Drawings by-job table all do — so the list can be curated from wherever you
+that table (the Projects table, the job page and the cost report's job detail
+all do) so the list can be curated from wherever you
 happen to be looking. `ScopeToggle` is mounted once, by `AppHeader`.
 
 ---
@@ -1780,6 +1361,10 @@ happen to be looking. `ScopeToggle` is mounted once, by `AppHeader`.
 Reworked 2026-08-31. The diagnosis, and a line-by-line map of every old surface
 to its new home, is in `docs/interface-proposal.md`. **No analysis or control
 was removed**; three things were added and the rest was regrouped.
+
+Narrowed 2026-09-25: Production, Drawings and the Cost vs Schedule tab were
+retired (`docs/cost-and-time-focus.md`, §11). The "What was wrong" list below
+describes the app as it was on 2026-08-31 and is kept as history.
 
 ### What was wrong
 
@@ -1806,9 +1391,8 @@ than what the app is for. Concretely:
 
 ### The organising idea
 
-> The application is about **jobs**. Everything else — a timesheet, a pour
-> schedule, a cost workbook, a ticket report — is a source of evidence about
-> jobs.
+> The application is about **jobs**. Everything else (a timesheet, a cost
+> workbook) is a source of evidence about jobs.
 
 So sections are named after the question they answer, sources are one thing with
 one vocabulary, and the job has a page.
@@ -1818,13 +1402,12 @@ one vocabulary, and the job has a page.
 | Route | Section | Tabs |
 |---|---|---|
 | `#/` | **Home** | — |
-| `#/projects` | **Projects** | All Jobs · Cost vs Schedule |
-| `#/production` | **Production** | Board · Calendar · Overview · Beds · Pieces · Schedule Changes |
-| `#/drawings` | **Drawings** | Queue · By Job · By Drafter |
+| `#/projects` | **Projects** | All Jobs |
 | `#/cost` | **Cost** | Portfolio · Cost Codes · Drafting & Engineering |
 | `#/time` | **Time** | Overview · People · Jobs · Cumulative |
 | `#/sources` | Sources | — (reached from the header chip and Home, not the nav) |
 | `#/job/<jobNo>` | Job page | Summary · Full Cost Report |
+| `#/production`, `#/drawings` | (retired) | alias to Home, which says where they went |
 
 `modules/sections.js` is the declaration and is **plain ESM** so the routing
 rules are testable in node; `modules/registry.js` attaches the components.
@@ -1846,21 +1429,22 @@ registry and can be driven by a fixture in the tests.
 - The error boundary is keyed on the **section**, not the route, so switching
   tab does not remount the view and throw away its scroll position.
 - **Routed drill-downs:** the job page, `#/time/person/<name>`,
-  `#/time/job/<name>`. **Not routed:** piece detail and day detail. That is not
-  an oversight — the schedule export has no stable piece id (§11), so there is
-  nothing to put in a URL. Don't invent one from an array index.
+  `#/time/job/<name>`. A drill-down gets a route only when its record has a
+  stable key to put in the URL; don't invent one from an array index. (The
+  retired piece and day panels were unrouted for exactly that reason.)
 
 ### Data
 
 Every dataset is created once in `src/app/AppData.jsx` and read through
 `useAppData()` from `core/appData.js`. The keys and the hooks are unchanged.
 
-This is not tidiness. Job cost was already reaching across the module boundary
-with its own `useDataset("production")`, which was the first sign the boundary
-was wrong; the job page needs all four sources at once; and the board and the
-movement report **must** share one `diff`, because `byRow` is keyed on the row
-objects themselves (§11). Two memos over the same rows would key two maps that
-agree on nothing.
+This is not tidiness. Job cost was once reaching across the module boundary
+with its own `useDataset` of another module's record, which was the first sign
+the boundary was wrong; and the job page, Projects and Home need both sources
+at once.
+
+Startup also runs `dropRetiredRecords` (`core/store.js`), which deletes the
+three records Production and Drawings left behind (§4).
 
 `useAppData` **throws** without a provider, on purpose: a section rendered
 outside the shell would otherwise show empty dashboards that look like "no data
@@ -1873,11 +1457,12 @@ longer each remember to gate on `ready`.
 
 Every source states **when its file was last modified**, on Sources, on Home and
 in each section's own strip — the question "how old is this and do I need to
-refresh it" was previously unanswerable for two of the four sources.
+refresh it" was previously unanswerable for two of the four sources the app
+then held.
 
-- `core/parse.js` exports `isoFromMtime`, and all three import paths use it:
-  the flat-table parser already did, and `job-cost/importFile.js` and
-  `production/ticketFile.js` captured **no date at all** until 2026-08-31.
+- `core/parse.js` exports `isoFromMtime`, and both import paths use it: the
+  flat-table parser already did, and `job-cost/importFile.js` captured **no
+  date at all** until 2026-08-31.
 - It is the file's **mtime**, so the UI says "modified" and never "exported". A
   copied or re-saved file carries a newer mtime than the report inside it.
 - **Do not conflate it with the cost report's `asOf`**, which the report prints
@@ -1905,9 +1490,9 @@ took an upload asks once. `components/SourceStrip.jsx` is the one row layout.
 
 A descriptor's `warn` is a **sentence**, not a flag, because whatever raises the
 header chip has to be able to say why in the same breath. This is how the
-coverage trap and the mixed-cut-off trap reach Home and the header instead of
-being trapped in one tab. **When you add a source, its `warn` is the part that
-matters most.**
+mixed-cut-off trap reaches Home and the header instead of being trapped in one
+tab (as the ticket coverage trap did, before it was retired). **When you add
+a source, its `warn` is the part that matters most.**
 
 ### The job page
 
@@ -1916,8 +1501,8 @@ presentation only. Rules it holds to:
 
 - Keyed on the job **number**, never the name.
 - Each source is its own section, with its own as-of stated. The figures are
-  **never summed across sources**: cost is cumulative to date, the schedule is a
-  forward month, the ticket report is a snapshot.
+  **never summed across sources**: cost is dollars to date, the timesheet is
+  hours over whatever window it was run for.
 - "Not loaded" and "loaded but says nothing about this job" are **visibly
   different**. Neither renders zeros.
 - The Hours block was a labelled guess until the time export was profiled on
@@ -1928,8 +1513,8 @@ presentation only. Rules it holds to:
 
 ### Projects: the merged table
 
-`modules/projects/rows.js` merges the cost job list, the schedule job list, the
-ticket report and the timesheet into one row per job number. A job present in only one source leaves the other
+`modules/projects/rows.js` merges the cost job list and the timesheet into one
+row per job number. A job present in only one source leaves the other
 side **dashed, not zeroed** — a dash says "this source doesn't mention it", a
 zero would say "it has none". Tested.
 
@@ -1942,10 +1527,11 @@ Keep this list true when adding a column.
 
 ### Visual review status
 
-**None of this has been looked at.** There is no browser automation here (§7).
-The five suites pass, including against the real exports, but they prove that
-views mount and that arithmetic holds — not that anything looks right. The
+**None of this has been looked at**, including the 2026-09-25 retirement.
+There is no browser automation here (§7). The four suites pass, but they prove
+that views mount and that arithmetic holds, not that anything looks right. The
 places most likely to need adjusting, in order: the shell header (a new
-persistent row on every page), the job page (four sources on one screen), and
-the Projects table (cost and schedule columns in one row, many of them dashed).
-Ask the owner to look at `npm run dev`.
+persistent row on every page, now with four nav items), the Projects table
+(cost columns, hours and people in one row, many of them dashed), the job page
+(two sources on one screen) and Home (a shorter task list and the retirement
+note). Ask the owner to look at `npm run dev`.

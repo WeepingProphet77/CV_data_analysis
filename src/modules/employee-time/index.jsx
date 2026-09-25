@@ -3,9 +3,9 @@
  *
  * Profiled against a real export on 2026-08-31, which closed the last standing
  * caveat in the app: the schema was right, and `Job Name` carries the job
- * number in the same shape the schedule uses. So these hours join to cost, to
- * the schedule and to the ticket report on the job number like everything else,
- * and this section takes part in the app-wide My Projects scope (§12, §14).
+ * number in the same `"<no> - <title>"` shape the cost report keys on. So these
+ * hours join to cost on the job number, and this section takes part in the
+ * app-wide My Projects scope (§12, §14).
  */
 import React, { useMemo, useState } from "react";
 import { useAppData } from "../../core/appData.js";
@@ -171,7 +171,7 @@ export default function TimeModule({ tab, route }) {
                         onOpenJobNo={(jobNo) => go("job", jobNo)} />
               <p className="hint">
                 Every job here carries its number, so clicking through to the whole project —
-                cost, schedule and drawings alongside these hours — works from{" "}
+                its cost report alongside these hours — works from{" "}
                 <a className="link" href={hrefFor("projects", "jobs")}>Projects</a> or from the
                 arrow on any row.
               </p>

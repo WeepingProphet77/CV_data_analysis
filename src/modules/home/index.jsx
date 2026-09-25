@@ -8,9 +8,9 @@
  * what is loaded, and where do I start.
  *
  * It also carries the warnings that belong to the whole app rather than to one
- * tab — a ticket report that doesn't cover the schedule, plants exported on
- * different dates — because those change how every number below them should be
- * read (CLAUDE.md §11, §13).
+ * tab — plants exported on different dates, files nobody has refreshed —
+ * because those change how every number below them should be read
+ * (CLAUDE.md §13, §15).
  */
 import React from "react";
 import { useAppData } from "../../core/appData.js";
@@ -27,34 +27,22 @@ import { count, ago } from "../../core/format.js";
  */
 const TASKS = [
   {
-    label: "Plan the week's pours",
-    detail: "The bed × day planning board, with missing drawings and schedule slips marked on the cards.",
-    href: hrefFor("production", "board"),
-    needs: ["schedule"],
-  },
-  {
-    label: "Find pieces with no drawing",
-    detail: "Every piece missing its ticket, ordered by how soon it is cast.",
-    href: hrefFor("drawings", "queue"),
-    needs: ["tickets"],
-  },
-  {
-    label: "See what moved since last week",
-    detail: "Each schedule upload compared against the one it replaced — moved, added, dropped.",
-    href: hrefFor("production", "changes"),
-    needs: ["schedule"],
-  },
-  {
     label: "Check margin across the portfolio",
     detail: "Contract, billing, forecast margin and $/SF, by plant and by job.",
     href: hrefFor("cost", "portfolio"),
     needs: ["cost"],
   },
   {
+    label: "Check drafting & engineering",
+    detail: "D&E budget, forecast and actual by job, with hours and design progress.",
+    href: hrefFor("cost", "engineering"),
+    needs: ["cost"],
+  },
+  {
     label: "Look up one job",
-    detail: "Cost, schedule, drawings and hours for a single project, on one page.",
+    detail: "Cost and booked hours for a single project, on one page.",
     href: hrefFor("projects", "jobs"),
-    needs: ["cost", "schedule"],
+    needs: ["cost", "time"],
   },
   {
     label: "See where hours are going",
@@ -181,29 +169,16 @@ export default function Home() {
         </Panel>
       )}
 
-      <Panel title="Not built yet">
-        <p className="hint" style={{ lineHeight: 1.9, marginBottom: 10 }}>
-          <strong style={{ color: "var(--text-secondary)" }}>Plan vs actual.</strong> Concrete
-          Vision's scheduling export would give planned against actual dates, slip by job and
-          phase, weekly load against capacity, and a cross-link to timesheet hours. It would
-          arrive as a tab under Production.
-        </p>
-        <div className="section-label">Expected export columns (to confirm)</div>
-        <div>
-          {["Job Name", "Phase / Activity", "Scheduled Start", "Scheduled Finish",
-            "Actual Start", "Actual Finish", "Crew / Resource", "Status"].map((c) => (
-            <span className="badge" key={c}>{c}</span>
-          ))}
-        </div>
-        <p className="hint" style={{ marginTop: 10 }}>
-          That column list is a guess and has not been checked against a real export.
-        </p>
-      </Panel>
-
       <p className="hint">
-        {count(app.schedule.rows.length)} scheduled rows · {count(app.tickets.rows.length)} pieces
-        missing a ticket · {count(app.cost.data.jobs.length)} costed jobs ·{" "}
+        {count(app.cost.data.jobs.length)} costed jobs ·{" "}
         {count(app.time.rows.length)} timesheet entries currently in this browser.
+      </p>
+
+      {/* For anyone arriving from an old bookmark: #/production and #/drawings
+          redirect here (sections.js ALIASES), and this is where they learn why. */}
+      <p className="hint">
+        The pour schedule and the missing-ticket queue that used to be here have moved to
+        other tools. This app now covers job cost and timesheet hours.
       </p>
     </div>
   );

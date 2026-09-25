@@ -14,17 +14,17 @@
  */
 
 /**
- * "45219 - FIU STUDENT HOUSING" -> { jobNo: "45219", jobTitle: "FIU STUDENT HOUSING" }
+ * "50101 - RIVERSIDE OFFICE TOWER" -> { jobNo: "50101", jobTitle: "RIVERSIDE OFFICE TOWER" }
  *
- * **This is the same shape the production export uses, and it is what makes the
- * timesheet join real.** It parsed on 29,262 of 29,267 rows (100.0%) of the
+ * **This is the same shape every Concrete Vision export uses, and it is what
+ * makes the timesheet join real.** It parsed on 29,262 of 29,267 rows (100.0%) of the
  * profiled export; the 5 that fail carry a title with no number at all
- * ("- St. Jude Clinical Research Tower") and keep `jobNo: ""`.
+ * ("- Clinic Tower") and keep `jobNo: ""`.
  *
- * The separator is matched only when surrounded by whitespace — the identical
- * rule production needs, and for the identical reason: this export is full of
- * `00-001`-style admin job numbers, and an unspaced match would cut them in
- * half and collapse `00-006` and `00-009` onto one key. 19.2% of all hours sit
+ * The separator is matched only when surrounded by whitespace. The rule was
+ * first found in the retired production schema, and it matters more here: this
+ * export is full of `00-001`-style admin job numbers, and an unspaced match
+ * would cut them in half and collapse `00-006` and `00-009` onto one key. 19.2% of all hours sit
  * on those `00-*` jobs, so getting it wrong would be expensive here.
  */
 export function splitJob(v) {
@@ -78,7 +78,7 @@ export const employeeTimeSchema = {
      */
     name: `${row.firstName} ${row.lastName}`.trim() || "(unnamed)",
     // The job number is the project's identity in every system here, which is
-    // what lets these hours join to cost and to the schedule (§12, §15).
+    // what lets these hours join to cost (§12, §15).
     ...splitJob(row.job),
   }),
 

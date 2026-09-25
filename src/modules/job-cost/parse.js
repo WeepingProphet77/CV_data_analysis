@@ -184,13 +184,13 @@ export function parseJobSheet(aoa, sheetName = "") {
   return { job, costs, quantities, sections, jobTotals, contingency };
 }
 
-import { COST_TO_PRODUCTION } from "./plants.js";
+import { COST_PLANTS } from "./plants.js";
 
 /**
  * Every plant name the app already knows, from the single place that mapping
  * lives (§13). Used only as a fallback reading of a drifted filename.
  */
-const KNOWN_PLANTS = Object.keys(COST_TO_PRODUCTION);
+const KNOWN_PLANTS = COST_PLANTS;
 
 /**
  * Derive the plant from the export's filename.
@@ -211,8 +211,8 @@ const KNOWN_PLANTS = Object.keys(COST_TO_PRODUCTION);
  *
  * It never returns "", because an empty library key would collide with every
  * other unnamed source and silently overwrite it. Step 3 can still produce a
- * plant no one recognises; that is visible rather than silent, since an
- * unmapped plant shows as unmatched against production (`plants.js`).
+ * plant no one recognises; that is visible rather than silent, since the
+ * plant is listed by name on Sources and in the Cost plant table.
  */
 export function plantFromFileName(fileName) {
   const base = text(fileName)

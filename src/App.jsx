@@ -1,7 +1,7 @@
 /**
  * App shell: the persistent header, the hash route, and the error boundary.
  *
- * Hash routing (#/production/board) is deliberate — GitHub Pages serves static
+ * Hash routing (#/cost/codes) is deliberate — GitHub Pages serves static
  * files with no rewrite rules, so a path-based route would 404 on refresh or on
  * a shared deep link.
  *
@@ -28,7 +28,7 @@ function currentRoute() {
   return parseRoute(redirectLegacy(window.location.hash), ROUTE_OPTS);
 }
 
-/** A bookmark from before the rework lands where its section went, not on Home. */
+/** A bookmark to a renamed or retired section lands where its section went. */
 function redirectLegacy(hash) {
   const [first, ...rest] = segments(hash);
   const to = ALIASES[first];

@@ -5,6 +5,11 @@ half once the real export arrived (it carries the job number; the hours join is
 real and Time joined the app-wide scope). What remains of phase 4 is confirming
 the plan-vs-actual export's columns, which needs a file nobody has yet.
 
+> **Historical record.** On 2026-09-25 the Production and Drawings sections,
+> and the Cost vs Schedule tab, were retired, and the plan-vs-actual work went
+> with them. See [cost-and-time-focus.md](cost-and-time-focus.md). What follows
+> describes the app as it was when this proposal was written.
+
 CLAUDE.md §12 and §15 are the maintained description of what was built; this
 document is kept for the diagnosis and for the accounting in §8. Where a claim
 here was overtaken by the profile, it is marked in place rather than rewritten —
