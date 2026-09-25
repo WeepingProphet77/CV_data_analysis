@@ -1,6 +1,8 @@
 # Cost and Time focus: retiring Production and Drawings
 
-Proposed 2026-09-25. Status: **plan, not yet implemented.**
+Proposed and implemented 2026-09-25, with every decision below taken at its
+recommended answer. Status: **implemented.** `npm test` runs four suites, all
+passing. Nothing has been visually checked yet.
 
 ## Why
 
@@ -35,8 +37,12 @@ evidence instead of four.
 | Tests and samples | `scripts/production-test.mjs`, `production-ticket-sample.mjs`, `make-production-sample.mjs`, `samples/production.sample.csv` |
 | Home | the three production/drawings tasks and the "Plan vs actual" placeholder (it was scoped as a Production tab) |
 
-Nothing is lost for good. The last commit that carries all of it gets a tag,
-`pre-cost-time-focus`, so any piece can be recovered with one `git checkout`.
+Nothing is lost for good. The last commit that carries all of it is `ca57d86`
+(the head of `main` before this change), so any piece can be recovered with one
+`git checkout`. It is tagged `pre-cost-time-focus` in the working copy that made
+the change; the session that did so could not push tags, so push it from a
+normal checkout if the tag is wanted on GitHub:
+`git tag -a pre-cost-time-focus ca57d86 -m "..." && git push origin pre-cost-time-focus`.
 
 ## What stays, and what changes in it
 
@@ -154,9 +160,10 @@ signatures, which lived in the removed suite, go away.
 
 ## Order of work
 
-One branch, one PR, in commits that each leave `npm test` green:
+One branch, one PR. As built, the code landed as one commit (steps 2 to 4
+together, green at the end) and the documentation as a second:
 
-1. Tag the current head `pre-cost-time-focus`.
+1. Tag the current head `pre-cost-time-focus` (done locally; see above).
 2. Trim the shared layer first (`AppData`, `sources.js`, `rows.js`,
    `assemble.js`, Projects, job page, Home, Sources, JobDetail) so nothing
    outside the two folders still imports from them. Update the tests alongside.
