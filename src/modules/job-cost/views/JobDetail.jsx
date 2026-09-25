@@ -61,7 +61,7 @@ function CostRow({ c }) {
   );
 }
 
-export default function JobDetail({ job, costs, quantities, production, mine, onBack, onOpenProduction }) {
+export default function JobDetail({ job, costs, quantities, mine, onBack }) {
   const [showEmpty, setShowEmpty] = useState(true);
 
   const bySection = useMemo(() => {
@@ -99,11 +99,6 @@ export default function JobDetail({ job, costs, quantities, production, mine, on
             {job.sheet && job.sheet !== job.jobNo ? ` — sheet "${job.sheet}"` : ""}
           </div>
         </div>
-        {production && (
-          <button className="btn" onClick={() => onOpenProduction?.(job.jobNo)}>
-            Scheduled in Production →
-          </button>
-        )}
       </div>
 
       <div className="cards">

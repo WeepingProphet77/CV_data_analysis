@@ -4,7 +4,7 @@
  * Each section still shows what *it* is reading, but adding, replacing and
  * removing anything can be done from here without first working out which
  * module owns which export. That mattering is the point: the job cost reports
- * are read by three sections now, and the ticket report by two.
+ * are read by three sections, and the timesheet by three.
  */
 import React from "react";
 import { useAppData } from "../../core/appData.js";
@@ -15,10 +15,8 @@ import { Panel, Badge } from "../../components/ui.jsx";
 import { ImportButton } from "../../components/FileImport.jsx";
 import { hrefFor } from "../../core/routing.js";
 import { count, ago, daysSince } from "../../core/format.js";
-import productionSchema from "../production/schema.js";
 import timeSchema from "../employee-time/schema.js";
 import { SourceDrop } from "../job-cost/views/SourceLibrary.jsx";
-import { TicketImportButton } from "../production/views/TicketImport.jsx";
 
 export default function SourcesModule() {
   const app = useAppData();
@@ -29,8 +27,6 @@ export default function SourcesModule() {
 
   const removeEverything = () => {
     if (!window.confirm("Remove every file from this browser? Starred projects are kept.")) return;
-    app.schedule.clear();      // also drops the baseline
-    app.tickets.clear();
     app.costLib.clear();
     app.time.clear();
   };
@@ -63,32 +59,6 @@ export default function SourcesModule() {
         re-saved today does not make the report inside it any newer. Anything older than{" "}
         {STALE_AFTER_DAYS} days is flagged, which is a rule of thumb rather than anyone's policy.
       </p>
-
-      <SourceCard
-        d={byId.schedule}
-        expected="One sheet, 20 columns, one row per scheduled piece. Plant, Bed Date, Bed Name, Piece Mark, Qty."
-        add={<ImportButton schema={productionSchema} onLoaded={app.schedule.load} label={VERBS.add} />}
-        replace={<ImportButton schema={productionSchema} onLoaded={app.schedule.load} label={VERBS.replace} />}
-        onRemove={app.schedule.clear}
-        note={
-          app.baseline.rows.length > 0 && (
-            <p className="hint" style={{ marginTop: 8 }}>
-              Replacing the schedule keeps the outgoing one as a comparison, which is what{" "}
-              <a className="link" href={hrefFor("production", "changes")}>Schedule Changes</a> reads.
-              Removing the schedule forgets it too — a comparison against a file nobody remembers
-              loading is worse than none.
-            </p>
-          )
-        }
-      />
-
-      <SourceCard
-        d={byId.tickets}
-        expected="One sheet, grouped plant then job, with Plant Name / Job Num / Job Name / Piece Mark headings. Run it over the same dates as the schedule."
-        add={<TicketImportButton onSource={app.tickets.load} label={VERBS.add} />}
-        replace={<TicketImportButton onSource={app.tickets.load} label={VERBS.replace} ghost />}
-        onRemove={app.tickets.clear}
-      />
 
       {/* The cost library is the one source that is several files at once, so
           it expands into a row per plant, each independently replaceable. */}
@@ -138,9 +108,8 @@ export default function SourcesModule() {
         onRemove={app.time.clear}
         note={
           <p className="hint" style={{ marginTop: 8 }}>
-            This export's columns were inferred from an older tool and have never been checked
-            against a real file. If it is rejected, the message names the column it wanted and
-            lists what it found.
+            If a file is rejected, the message names the column it wanted and lists the
+            columns it found.
           </p>
         }
       />

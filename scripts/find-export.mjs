@@ -56,8 +56,8 @@ export function findExport({ dir = ".", hint, identify }) {
 /**
  * A content test for a flat table: every header in `signature` must be present.
  *
- * Signatures are the columns that make an export *that* export — "Bed Date" and
- * "Piece Mark" are the schedule and nothing else. Requiring the schema's whole
+ * Signatures are the columns that make an export *that* export — "Effective
+ * Date" and "Deptment" are the timesheet and nothing else. Requiring the schema's whole
  * required set is not enough on its own, because core/parse.js falls back to
  * substring containment and two exports both carrying a date and a job name can
  * satisfy each other's schema.

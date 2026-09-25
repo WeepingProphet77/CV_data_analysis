@@ -106,6 +106,29 @@ export async function writeRecord(key, payload) {
 const mb = (bytes) =>
   bytes == null ? "?" : `${(bytes / 1024 / 1024).toFixed(0)} MB`;
 
+/**
+ * Records for sections that no longer exist.
+ *
+ * Production and Drawings were retired on 2026-09-25
+ * (docs/cost-and-time-focus.md). Anyone who used them still has the schedule,
+ * the ticket report and the schedule baseline in this browser, and a schedule
+ * export is several MB. With the code gone nothing would ever read or clear
+ * them, so they are deleted on startup. Deleting a missing key is a no-op, so
+ * this is safe to leave in place indefinitely.
+ */
+export const RETIRED_RECORDS = ["production", "production-tickets", "production-baseline"];
+
+/** Resolves once every retired record is gone. Never throws. */
+export async function dropRetiredRecords() {
+  for (const id of RETIRED_RECORDS) {
+    const key = storeKey(id);
+    lsRemove(key);
+    if (idbAvailable()) {
+      try { await idbDel(key); } catch { /* already gone, or storage blocked */ }
+    }
+  }
+}
+
 /* -- Hook --------------------------------------------------------------- */
 
 /**

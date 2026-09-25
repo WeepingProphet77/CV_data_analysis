@@ -3,10 +3,10 @@
  *
  * Home, the Sources page and the header chip all need to answer "what is
  * loaded, and is anything wrong with it" — and the answer used to be split
- * across three modules, each stating it only to someone already standing on
- * that tab. The most dangerous state in the app is a ticket report that does
- * not cover the loaded schedule (CLAUDE.md §11): silence there reads as "every
- * piece is drawn". It has to be visible from anywhere, so it is computed here.
+ * across modules, each stating it only to someone already standing on that
+ * tab. The most dangerous state left is a cost library whose plants were cut
+ * off on different dates (CLAUDE.md §13): the company-wide totals still look
+ * plausible. It has to be visible from anywhere, so it is computed here.
  *
  * Plain ESM, node-importable, and pure — it takes the assembled app data and
  * returns descriptors. No React, so the warning rules can be tested directly.
@@ -49,57 +49,14 @@ function ageOf(fileDate, today) {
 }
 
 /**
- * Descriptors in the order a person meets them: the schedule first, because
- * almost everything else is read against it.
+ * Descriptors in the order a person meets them: cost first, because the job
+ * list and the job page are built around it.
  *
  * `warn` is a sentence, not a flag — whatever raises the header chip has to be
  * able to say why in the same breath.
  */
 export function describeSources(app, today = new Date()) {
   const out = [];
-
-  out.push({
-    id: "schedule",
-    label: "Schedule",
-    section: "production",
-    file: "Scheduled Production Report",
-    loaded: app.schedule.rows.length > 0,
-    fileName: app.schedule.meta?.fileName || "",
-    detail: app.schedule.rows.length
-      ? `${plural(app.schedule.rows.length, "row", "rows")}${
-          app.scheduleRange.min ? ` · ${app.scheduleRange.min} → ${app.scheduleRange.max}` : ""
-        }`
-      : "",
-    hint: "Concrete Vision · forward-looking, a month of scheduled pours.",
-    ...ageOf(app.schedule.meta?.fileDate, today),
-    warn: "",
-    warnings: app.schedule.meta?.warnings || [],
-    persistWarning: app.schedule.persistWarning,
-  });
-
-  const t = app.tickets;
-  out.push({
-    id: "tickets",
-    label: "Missing tickets",
-    section: "drawings",
-    file: "Missing Piece Mark Ticket report",
-    loaded: t.rows.length > 0,
-    fileName: t.source.fileName,
-    detail: t.rows.length
-      ? `${plural(t.rows.length, "piece", "pieces")} · ${plural(t.source.jobs.length, "job", "jobs")}${
-          t.source.range.min ? ` · bed dates ${t.source.range.min} → ${t.source.range.max}` : ""
-        }`
-      : "",
-    hint: "Concrete Vision · every piece with no ticket drawing.",
-    ...ageOf(t.source.fileDate, today),
-    // The coverage trap, stated wherever the source is listed.
-    warn:
-      t.rows.length && app.schedule.rows.length && !app.coverage.ticketsInWindow
-        ? "None of these pieces have a bed date inside the loaded schedule's window — an unflagged board does not mean every piece is drawn."
-        : "",
-    warnings: t.source.warnings || [],
-    persistWarning: app.ticketData.persistWarning,
-  });
 
   const cost = app.cost;
   out.push({

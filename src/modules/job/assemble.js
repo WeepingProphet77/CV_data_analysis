@@ -1,19 +1,18 @@
 /**
  * One job, gathered from every source that mentions it.
  *
- * The job number is the project's identity in all three systems here — it is
- * what the cost↔production join matches on (CLAUDE.md §13) and what the ticket
- * join matches on (§11) — so it is the key, and the job *name* never is: the
- * two systems write it differently.
+ * The job number is the project's identity in both systems here — the cost
+ * report and the timesheet both carry it (CLAUDE.md §12, §13) — so it is the
+ * key, and the job *name* never is: the two systems write it differently.
  *
  * Pure ESM and node-importable: this is the arithmetic, the page is only its
  * presentation.
  *
- * The four sources answer different questions and are never summed together.
- * Cost is cumulative to date; the schedule is a forward month of scheduled
- * pours; the ticket report is a snapshot of what has no drawing. Each section
- * carries its own as-of, because reading one as the other is the mistake this
- * page could most easily invite.
+ * The two sources answer different questions and are never summed together.
+ * Cost is dollars booked to codes, cumulative to date; the timesheet is hours
+ * booked by people over whatever window it was run for. Each section carries
+ * its own as-of, because reading one as the other is the mistake this page
+ * could most easily invite.
  */
 
 /**
@@ -21,7 +20,7 @@
  *
  * **This is a real join, on the same key as everything else.** The employee
  * time export was profiled on 2026-08-31 and its `Job Name` carries the job
- * number in the same `"<no> - <title>"` shape the schedule uses — it parsed on
+ * number in the same `"<no> - <title>"` shape the other exports use — it parsed on
  * 100.0% of rows. `jobNo` is derived at parse time by the schema, so this is a
  * plain equality match, not a string search.
  *
@@ -59,22 +58,17 @@ const rollup = (rows, pick) => {
 export function assembleJob({
   jobNo,
   costJobs = [],
-  scheduleRows = [],
-  ticketRows = [],
   timeRows = [],
-  diff = null,
   loaded = {},
 }) {
   const mine = String(jobNo || "");
 
   const costs = costJobs.filter((j) => j.jobNo === mine);
-  const sched = scheduleRows.filter((r) => r.jobNo === mine);
-  const tickets = ticketRows.filter((t) => t.jobNo === mine);
   const hours = matchTimeRows(timeRows, mine);
 
   // The title, from whichever source has one — they disagree on wording, so
-  // the schedule's is preferred for being the one a scheduler reads.
-  const title = sched[0]?.jobTitle || costs[0]?.jobTitle || tickets[0]?.jobTitle || "";
+  // the cost report's is preferred for being the contract's.
+  const title = costs[0]?.jobTitle || hours[0]?.jobTitle || "";
 
   const cost = costs.length
     ? {
@@ -105,42 +99,11 @@ export function assembleJob({
     cost.contractPerSf = cost.hasSf && cost.sfJob > 0 ? cost.netContract / cost.sfJob : null;
   }
 
-  const schedule = sched.length
-    ? {
-        rows: sched,
-        pieces: sum(sched, (r) => r.qty),
-        sf: sum(sched, (r) => r.sf),
-        cy: sum(sched, (r) => r.cy),
-        beds: uniq(sched, (r) => r.bedKey).length,
-        days: uniq(sched, (r) => r.date).length,
-        plants: uniq(sched, (r) => r.plant),
-        range: span(sched, (r) => r.date),
-      }
-    : null;
-
-  // Movement is only meaningful for pieces on this job, and only when a
-  // previous upload exists to compare against.
-  const movement = diff?.ready
-    ? {
-        moved: diff.moved.filter((e) => e.row.jobNo === mine),
-        added: diff.added.filter((e) => e.row.jobNo === mine),
-        removed: diff.removed.filter((e) => e.prev.jobNo === mine),
-      }
-    : null;
-
   return {
     jobNo: mine,
     title,
     loaded,
     cost,
-    schedule,
-    movement,
-    drawings: {
-      rows: tickets,
-      pieces: tickets.length,
-      unassigned: tickets.filter((t) => !t.drawnBy).length,
-      range: span(tickets, (t) => t.date),
-    },
     hours: {
       rows: hours,
       hours: sum(hours, (r) => r.hrs),
@@ -154,22 +117,19 @@ export function assembleJob({
       byPerson: rollup(hours, (r) => r.name),
       offices: uniq(hours, (r) => r.loc),
     },
-    // Which sources know this job at all — what makes "not scheduled" legible
-    // as a fact rather than as a gap in the page.
+    // Which sources know this job at all — what makes "no hours booked"
+    // legible as a fact rather than as a gap in the page.
     seenIn: {
       cost: costs.length > 0,
-      schedule: sched.length > 0,
-      drawings: tickets.length > 0,
       time: hours.length > 0,
     },
   };
 }
 
 /** Every job number any loaded source knows about, for the Projects list. */
-export function allJobNumbers({ costJobs = [], scheduleRows = [], ticketRows = [] }) {
+export function allJobNumbers({ costJobs = [], timeRows = [] }) {
   const s = new Set();
   for (const j of costJobs) if (j.jobNo) s.add(j.jobNo);
-  for (const r of scheduleRows) if (r.jobNo) s.add(r.jobNo);
-  for (const t of ticketRows) if (t.jobNo) s.add(t.jobNo);
+  for (const r of timeRows) if (r.jobNo) s.add(r.jobNo);
   return [...s].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }

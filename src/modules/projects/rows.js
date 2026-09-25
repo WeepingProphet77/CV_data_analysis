@@ -1,12 +1,11 @@
 /**
  * The unified project list — one row per job number, across every source.
  *
- * There used to be two Jobs tables: one over the cost reports, one over the
- * schedule, listing the same entity with different columns and no way to get
- * from one to the other. This builds a single row per job, filled in from
- * whichever sources know about it, so "costed but not scheduled" and
- * "scheduled but not costed" are visible states of one list rather than two
- * lists that happen not to overlap.
+ * There used to be a Jobs table per module, listing the same entity with
+ * different columns and no way to get from one to the other. This builds a
+ * single row per job, filled in from whichever source knows about it, so
+ * "costed but no hours booked" and "hours booked but not costed" are visible
+ * states of one list rather than two lists that happen not to overlap.
  *
  * A blank cell here means "this source says nothing about this job", which is
  * information. It is never rendered as a zero.
@@ -19,12 +18,12 @@ const add = (a, b) => (a || 0) + (b || 0);
 /**
  * Build the rows.
  *
- * Keyed on job **number**, which is the project's identity in all three systems
+ * Keyed on job **number**, which is the project's identity in both systems
  * (CLAUDE.md §13, §14). A job costed at two plants is one row; its plants are
  * listed and its cost figures added, because they are the same project even
  * when they are separate contracts — the job page breaks them out again.
  */
-export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [], timeRows = [] }) {
+export function projectRows({ costJobs = [], timeRows = [] }) {
   const map = new Map();
 
   const at = (jobNo) => {
@@ -32,11 +31,9 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [],
     if (!r) {
       r = {
         jobNo, title: "", plants: new Set(),
-        costed: false, scheduled: false, drawn: false,
+        costed: false,
         netContract: 0, amountBilled: 0, estCost: 0, projCost: 0, actCost: 0, margin: 0,
         sfJob: 0, hasSf: false,
-        pieces: 0, sfScheduled: 0, cy: 0, beds: new Set(), days: new Set(),
-        missingTickets: 0, unassigned: 0,
         timed: false, hours: 0, people: new Set(),
       };
       map.set(jobNo, r);
@@ -59,29 +56,6 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [],
     if (j.sf.hasSf) { r.hasSf = true; r.sfJob = add(r.sfJob, j.sf.job); }
   }
 
-  for (const row of scheduleRows) {
-    if (!row.jobNo) continue;
-    const r = at(row.jobNo);
-    r.scheduled = true;
-    // The schedule's title is the one a scheduler reads, so it wins.
-    if (row.jobTitle) r.title = row.jobTitle;
-    r.plants.add(row.plant);
-    r.pieces = add(r.pieces, row.qty);
-    r.sfScheduled = add(r.sfScheduled, row.sf);
-    r.cy = add(r.cy, row.cy);
-    if (row.bedKey) r.beds.add(row.bedKey);
-    if (row.date) r.days.add(row.date);
-  }
-
-  for (const t of ticketRows) {
-    if (!t.jobNo) continue;
-    const r = at(t.jobNo);
-    r.drawn = true;
-    r.title = r.title || t.jobTitle;
-    r.missingTickets += 1;
-    if (!t.drawnBy) r.unassigned += 1;
-  }
-
   // Timesheet hours join on the job number like everything else — the export
   // carries it in "<no> - <title>", profiled 2026-08-31 (§12).
   for (const t of timeRows) {
@@ -97,8 +71,6 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [],
     .map((r) => ({
       ...r,
       plants: [...r.plants].filter(Boolean).sort(),
-      beds: r.beds.size,
-      days: r.days.size,
       people: r.people.size,
       // Rates and ratios are null, never zero, when their denominator is
       // unknown — a zero would read as "costs nothing per foot".
@@ -110,8 +82,7 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [],
       // Sorting on presence needs a value the generic comparator understands.
       // Cost per booked hour is only meaningful where both sides exist.
       costPerHour: r.costed && r.hours > 0 ? r.actCost / r.hours : null,
-      sources: [r.costed && "cost", r.scheduled && "schedule", r.drawn && "drawings",
-                r.timed && "time"].filter(Boolean).join("+"),
+      sources: [r.costed && "cost", r.timed && "time"].filter(Boolean).join("+"),
     }))
     .sort((a, b) => a.jobNo.localeCompare(b.jobNo, undefined, { numeric: true }));
 }
@@ -120,12 +91,11 @@ export function projectRows({ costJobs = [], scheduleRows = [], ticketRows = [],
 export const PRESENCE = [
   { id: "all", label: "All" },
   { id: "costed", label: "Costed", test: (r) => r.costed },
-  { id: "scheduled", label: "Scheduled", test: (r) => r.scheduled },
-  { id: "both", label: "Costed + scheduled", test: (r) => r.costed && r.scheduled },
-  { id: "cost-only", label: "Costed, not scheduled", test: (r) => r.costed && !r.scheduled },
-  { id: "sched-only", label: "Scheduled, not costed", test: (r) => r.scheduled && !r.costed },
-  { id: "missing", label: "Missing drawings", test: (r) => r.missingTickets > 0 },
   { id: "timed", label: "Has booked hours", test: (r) => r.timed },
+  { id: "both", label: "Costed + hours", test: (r) => r.costed && r.timed },
+  // Active jobs with nothing booked in the timesheet's window — finished
+  // engineering, or engineering done outside the export's date range.
+  { id: "cost-only", label: "Costed, no hours", test: (r) => r.costed && !r.timed },
   // Hours booked against a job no cost report covers — either the report isn't
   // loaded, or the job is not an active one. Worth being able to find.
   { id: "time-only", label: "Hours, no cost report", test: (r) => r.timed && !r.costed },

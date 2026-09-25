@@ -2,14 +2,14 @@
  * The Job page — one project, every source, one address.
  *
  * This is the page the application was missing. A job was previously scattered
- * across four screens with one lossy link between them: job cost could jump to
- * `#/production` and the job was forgotten on arrival. Now every job number in
- * every table in the app links here, and the URL carries the job.
+ * across several screens with one lossy link between them, and the job was
+ * forgotten on arrival. Now every job number in every table in the app links
+ * here, and the URL carries the job.
  *
  * The arithmetic is in assemble.js so it can be tested in node; this file is
  * presentation only. Every section states its source and its as-of, because the
- * figures are not comparable: cost is cumulative to date, the schedule is a
- * forward month, the ticket report is a snapshot.
+ * figures are not comparable: cost is dollars to date, the timesheet is hours
+ * over whatever window it was run for.
  */
 import React from "react";
 import { useAppData } from "../../core/appData.js";
@@ -18,7 +18,7 @@ import { PageHeader, RouteTabs } from "../../components/Page.jsx";
 import { Panel, StatCard, Badge, BackLink } from "../../components/ui.jsx";
 import { StarButton } from "../../components/MyProjects.jsx";
 import { hrefFor, go } from "../../core/routing.js";
-import { money, ratio, count, fmt, perSf, sqft } from "../../core/format.js";
+import { money, ratio, fmt, perSf, sqft } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
 import JobDetail from "../job-cost/views/JobDetail.jsx";
 
@@ -29,19 +29,14 @@ export default function JobPage({ params, tab }) {
   const job = assembleJob({
     jobNo,
     costJobs: app.cost.data.jobs,
-    scheduleRows: app.schedule.rows,
-    ticketRows: app.tickets.rows,
     timeRows: app.time.rows,
-    diff: app.diff,
     loaded: {
       cost: app.costLib.sources.length > 0,
-      schedule: app.schedule.rows.length > 0,
-      drawings: app.tickets.rows.length > 0,
       time: app.time.rows.length > 0,
     },
   });
 
-  const known = job.cost || job.schedule || job.drawings.pieces || job.hours.rows.length;
+  const known = job.cost || job.hours.rows.length;
 
   return (
     <div className="jc">
@@ -51,7 +46,7 @@ export default function JobPage({ params, tab }) {
         title={jobNo || "No job selected"}
         subtitle={
           job.title
-            ? `${job.title}${job.cost ? ` · ${job.cost.plants.join(", ")}` : job.schedule ? ` · ${job.schedule.plants.join(", ")}` : ""}`
+            ? `${job.title}${job.cost ? ` · ${job.cost.plants.join(", ")}` : ""}`
             : "Not found in any loaded source"
         }
         actions={
@@ -65,7 +60,7 @@ export default function JobPage({ params, tab }) {
         <div className="panel">
           <p className="muted" style={{ lineHeight: 1.8 }}>
             No loaded source mentions job <strong>{jobNo}</strong>. It may be costed at a plant
-            whose report isn't imported, or scheduled in a month this export doesn't cover.
+            whose report isn't imported, or have hours outside the timesheet's date range.
             {" "}<a className="link" href={hrefFor("sources")}>Check the loaded files</a>.
           </p>
         </div>
@@ -90,7 +85,7 @@ export default function JobPage({ params, tab }) {
   );
 }
 
-/** The four sources, each on its own terms, never added together. */
+/** The two sources, each on its own terms, never added together. */
 function Summary({ app, job }) {
   return (
     <>
@@ -136,64 +131,6 @@ function Summary({ app, job }) {
               </p>
             )}
           </>
-        )}
-      </SourceSection>
-
-      <SourceSection
-        title="Schedule"
-        source="Scheduled Production Report"
-        asOf={job.schedule ? `${job.schedule.range.min} → ${job.schedule.range.max}` : ""}
-        note="Forward-looking — pours that are scheduled, not produced."
-        loaded={job.loaded.schedule}
-        present={Boolean(job.schedule)}
-        missingFile="the Scheduled Production Report"
-        absent="Nothing is scheduled for this job in the loaded export."
-        action={job.schedule && <a className="btn ghost" href={hrefFor("production", "board")}>Open the board</a>}
-      >
-        {job.schedule && (
-          <>
-            <div className="cards">
-              <StatCard label="Pieces Scheduled" value={count(job.schedule.pieces)} />
-              <StatCard label="SF Scheduled" value={count(Math.round(job.schedule.sf))} />
-              <StatCard label="Cubic Yards" value={fmt(job.schedule.cy)} />
-              <StatCard label="Beds" value={job.schedule.beds} small />
-              <StatCard label="Pour Days" value={job.schedule.days} small />
-            </div>
-            {job.movement && (job.movement.moved.length || job.movement.added.length || job.movement.removed.length) ? (
-              <p className="hint">
-                Since the previous upload:{" "}
-                <strong style={{ color: "var(--warning)" }}>{job.movement.moved.length} moved</strong>,{" "}
-                {job.movement.added.length} new, {job.movement.removed.length} dropped —{" "}
-                <a className="link" href={hrefFor("production", "changes")}>see what changed</a>.
-              </p>
-            ) : job.movement ? (
-              <p className="hint">Nothing on this job moved since the previous upload.</p>
-            ) : null}
-          </>
-        )}
-      </SourceSection>
-
-      <SourceSection
-        title="Drawings"
-        source="Missing Piece Mark Ticket report"
-        asOf={job.drawings.range.min ? `bed dates ${job.drawings.range.min} → ${job.drawings.range.max}` : ""}
-        note="Pieces with no ticket drawing."
-        loaded={job.loaded.drawings}
-        present={job.drawings.pieces > 0}
-        missingFile="the Missing Piece Mark Ticket report"
-        absent={
-          job.loaded.drawings
-            ? "This job has no pieces in the ticket report — either fully drawn, or outside the range it was run over."
-            : ""
-        }
-        action={job.drawings.pieces > 0 && <a className="btn ghost" href={hrefFor("drawings", "jobs")}>Open the queue</a>}
-      >
-        {job.drawings.pieces > 0 && (
-          <div className="cards">
-            <StatCard label="Pieces missing a ticket" value={count(job.drawings.pieces)} />
-            <StatCard label="No drafter assigned" value={count(job.drawings.unassigned)} />
-            <StatCard label="Earliest bed date" value={job.drawings.range.min || "—"} small />
-          </div>
         )}
       </SourceSection>
 
@@ -317,10 +254,8 @@ function FullCostReport({ app, job }) {
           job={rec}
           costs={app.cost.data.costsByJob.get(rec.key) || []}
           quantities={app.cost.data.qtyByJob.get(rec.key) || []}
-          production={app.scheduledJobNos.has(rec.jobNo)}
           mine={app.mine}
           onBack={() => go("job", job.jobNo)}
-          onOpenProduction={() => go("production", "board")}
         />
       ))}
     </>

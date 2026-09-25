@@ -13,7 +13,7 @@ import {
   parseJobSheet, buildSource, plantFromFileName, splitJobTitle, asOfToIso, num,
 } from "../src/modules/job-cost/parse.js";
 import { categoryOf, categoryOptions, SECTIONS } from "../src/modules/job-cost/categories.js";
-import { costPlantFor, productionPlantsFor, isUnmappedProductionPlant } from "../src/modules/job-cost/plants.js";
+import { COST_PLANTS } from "../src/modules/job-cost/plants.js";
 import { isSquareFeetRow, isPieceRow, squareFeetFor, perSf, ratesFor, jobSquareFeet } from "../src/modules/job-cost/squarefeet.js";
 import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
 import { toggleMember, isValidSelection, SCOPE_ALL, SCOPE_MINE } from "../src/core/myProjects.js";
@@ -22,7 +22,7 @@ import {
   blendedRate, engineeringRollup, hoursAgreement, varianceToBudget, forecastShift, RATE_BAND,
 } from "../src/modules/job-cost/engineering.js";
 import { money, moneyCompact, ratio } from "../src/core/format.js";
-import productionSchema from "../src/modules/production/schema.js";
+import { splitJob } from "../src/modules/employee-time/schema.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
 
 let failures = 0;
@@ -81,11 +81,10 @@ eq("a CV plant name still keys to its cost plant",
 ok("an unreadable name still yields a key", plantFromFileName("") === "Unnamed plant");
 eq("an unrecognised name is kept verbatim rather than guessed",
    plantFromFileName("weird-thing.xlsx"), "weird-thing");
-eq("CV structural plant rolls up", costPlantFor("Hillsboro Structural"), "Hillsboro");
-eq("cost plant covers both CV plants", productionPlantsFor("Hillsboro"), ["Hillsboro", "Hillsboro Structural"]);
-eq("unmapped CV plant returns itself", costPlantFor("Pearland"), "Pearland");
-ok("unmapped plant is reported as such", isUnmappedProductionPlant("Pearland"));
-ok("mapped plant is not", !isUnmappedProductionPlant("Kissimmee"));
+// The known-plant list is what the filename rescue reads; every plant on it
+// must be recoverable from a mangled copy of its own name.
+ok("every known plant is rescued from a drifted filename",
+   COST_PLANTS.every((p) => plantFromFileName(`Copy of ${p.toLowerCase()} (2).xlsx`) === p));
 
 console.log("\nCost-code taxonomy");
 eq("materials prefix", categoryOf("20.100").label, "Materials");
@@ -103,9 +102,13 @@ eq("compact millions", moneyCompact(7415439.52), "$7.4M");
 eq("compact thousands", moneyCompact(12900), "$12.9K");
 eq("stored ratio to percent", ratio(0.7752), "77.5%");
 
-console.log("\nProduction job-number split (the join key)");
+// The cost <-> timesheet join key. This block used to run against the
+// production schema, where the whitespace rule was first found; it moved to
+// the timesheet's splitJob when Production was retired (2026-09-25), so the
+// 00-006 / 00-009 guard did not go with it.
+console.log("\nTimesheet job-number split (the join key)");
 {
-  const d = (job) => productionSchema.derive({ job });
+  const d = (job) => splitJob(job);
   eq("standard job name", [d("43134 - 1401 CHURCH STREET").jobNo, d("43134 - 1401 CHURCH STREET").jobTitle],
      ["43134", "1401 CHURCH STREET"]);
   // Two distinct admin jobs previously collapsed onto the job number "00".

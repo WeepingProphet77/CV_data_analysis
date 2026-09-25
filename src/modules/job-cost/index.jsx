@@ -5,10 +5,9 @@
  * the same jobs, which is what makes the join possible (on the job **number**,
  * never the name).
  *
- * Two things that were tabs here have moved: the job table and the
- * cost-versus-schedule comparison are both about the *job population* rather
- * than about money, so they live in **Projects** with the schedule columns
- * beside them. What stays is the analysis the source system cannot give them:
+ * The job table that was a tab here moved: it is about the *job population*
+ * rather than about money, so it lives in **Projects** with booked hours
+ * beside it. What stays is the analysis the source system cannot give them:
  * a portfolio roll-up, a cross-job cost-code view, and the D&E dashboard.
  *
  * The library itself is app-wide now (src/app/AppData.jsx) — same record, same
@@ -163,9 +162,9 @@ export default function CostModule({ tab }) {
           )}
 
           <p className="hint">
-            The job table and the cost-versus-schedule comparison moved to{" "}
-            <a className="link" href={hrefFor("projects", "jobs")}>Projects</a>, where the
-            schedule columns sit beside them.
+            The job table is in{" "}
+            <a className="link" href={hrefFor("projects", "jobs")}>Projects</a>, where booked
+            hours sit beside the cost columns.
           </p>
         </>
       )}

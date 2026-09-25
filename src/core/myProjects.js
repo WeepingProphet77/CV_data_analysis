@@ -3,15 +3,15 @@
  * currently scoped to it.
  *
  * **App-wide, not per module.** It lives in core/ because the same handful of
- * projects is what an engineering manager wants to see in job cost, in the
- * production schedule and in the missing-ticket report — starring a job in one
- * place and having to star it again in the next is the thing this avoids. Any
- * module can call useMyProjects(); they all read and write the same record, so
- * a star set on the Jobs table is already applied when Production is opened.
+ * projects is what an engineering manager wants to see in job cost and in the
+ * timesheet — starring a job in one place and having to star it again in the
+ * next is the thing this avoids. Any module can call useMyProjects(); they all
+ * read and write the same record, so a star set on the Jobs table is already
+ * applied when Time is opened.
  *
  * Membership is keyed on the **job number**, not a plant-scoped key. A job
  * number is the project's identity in every system here — it is what the
- * production join matches on, and what the ticket report joins on — so a star
+ * cost report and the timesheet both carry, and what they join on — so a star
  * survives a plant's report being re-imported, removed, or the job being costed
  * under a different plant.
  *

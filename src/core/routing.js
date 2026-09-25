@@ -7,13 +7,13 @@
  *
  * The app used to read only the first segment, which meant no tab and no
  * drill-down could be linked, bookmarked or reached with the Back button. This
- * parses the whole hash instead: `#/production/board`, `#/job/43134/cost`.
+ * parses the whole hash instead: `#/cost/codes`, `#/job/43134/cost`.
  *
  * Pure ESM with no React and no knowledge of what a section is, so the routing
  * rules can be tested in node.
  */
 
-/** "#/production/board" -> ["production", "board"] */
+/** "#/cost/codes" -> ["cost", "codes"] */
 export function segments(hash) {
   return String(hash || "")
     .replace(/^#/, "")

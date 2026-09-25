@@ -3,9 +3,9 @@
  * the app.
  *
  * This section exists because the job is the spine of the application and used
- * to have no home: the same project was listed by the cost module and by the
- * production module in two tables that shared no columns and no link. Here it
- * is one row, and clicking it opens the job page.
+ * to have no home: the same project was listed by each module in its own table,
+ * with no columns in common and no link between them. Here it is one row, and
+ * clicking it opens the job page.
  */
 import React, { useMemo, useState } from "react";
 import { useAppData } from "../../core/appData.js";
@@ -18,7 +18,6 @@ import { SCOPE_ALL } from "../../core/myProjects.js";
 import { hrefFor, go } from "../../core/routing.js";
 import { money, ratio, count, perSf, fmt } from "../../core/format.js";
 import { tabsFor } from "../sections.js";
-import ProductionLink from "../job-cost/views/ProductionLink.jsx";
 
 export default function ProjectsModule({ tab }) {
   const app = useAppData();
@@ -31,11 +30,9 @@ export default function ProjectsModule({ tab }) {
   const all = useMemo(
     () => projectRows({
       costJobs: app.cost.data.jobs,
-      scheduleRows: app.schedule.rows,
-      ticketRows: app.tickets.rows,
       timeRows: app.time.rows,
     }),
-    [app.cost.data.jobs, app.schedule.rows, app.tickets.rows, app.time.rows]
+    [app.cost.data.jobs, app.time.rows]
   );
 
   // My Projects narrows the pool itself, before any other filter, so no view
@@ -58,14 +55,14 @@ export default function ProjectsModule({ tab }) {
       .sort(compareBy(sort.col, sort.dir));
   }, [scoped, presence, plant, search, sort]);
 
-  const nothingLoaded = !app.costLib.sources.length && !app.schedule.rows.length && !app.time.rows.length;
+  const nothingLoaded = !app.costLib.sources.length && !app.time.rows.length;
 
   if (nothingLoaded) {
     return (
       <NeedsSource
         title="Projects"
-        file="the weekly Job Cost Reports, the Scheduled Production Report, or the employee time export"
-        blurb="Every job across cost, schedule, drawings and booked hours, in one list. Load any of those and the jobs it knows about appear here; load more and they line up on the job number."
+        file="the weekly Job Cost Reports or the employee time export"
+        blurb="Every job across cost and booked hours, in one list. Load either and the jobs it knows about appear here; load both and they line up on the job number."
       >
         <a className="btn" href={hrefFor("sources")}>Add a file</a>
       </NeedsSource>
@@ -82,8 +79,8 @@ export default function ProjectsModule({ tab }) {
         title="Projects"
         subtitle={
           `${count(all.length)} jobs known to the loaded files · ` +
-          `${count(all.filter((r) => r.costed && r.scheduled).length)} in both cost and schedule` +
-          (app.time.rows.length ? ` · ${count(all.filter((r) => r.timed).length)} with booked hours` : "")
+          `${count(all.filter((r) => r.costed).length)} costed · ` +
+          `${count(all.filter((r) => r.timed).length)} with booked hours`
         }
       />
 
@@ -103,38 +100,27 @@ export default function ProjectsModule({ tab }) {
               {missing.length} of your {mine.count} starred projects{" "}
               {missing.length === 1 ? "is" : "are"} not in any loaded file
               ({missing.slice(0, 8).join(", ")}{missing.length > 8 ? "…" : ""}) — that plant's
-              report may not be imported, or nothing is scheduled for them. They stay in your list.
+              report may not be imported, or no hours are booked to them. They stay in your list.
             </div>
           )}
 
-          {tab === "vs-schedule" ? (
-            <ProductionLink
-              jobs={app.cost.data.jobs}
-              qtyByJob={app.cost.data.qtyByJob}
-              production={app.schedule.rows}
-              onOpenJob={(key) => go("job", String(key).split("|")[1] || key)}
-            />
-          ) : (
-            <>
-              <FilterBar
-                dimensions={[
-                  { id: "plant", label: "Plants", value: plant, options: plants, onChange: setPlant },
-                  {
-                    id: "presence", label: "Sources", value: presence,
-                    options: PRESENCE.map((p) => p.id),
-                    labels: Object.fromEntries(PRESENCE.map((p) => [p.id, p.label])),
-                    onChange: setPresence,
-                  },
-                ]}
-                dirty={plant !== "All" || presence !== "all" || Boolean(search)}
-                onClear={() => { setPlant("All"); setPresence("all"); setSearch(""); }}
-                search={search}
-                onSearch={setSearch}
-                searchPlaceholder="Search job number or name…"
-              />
-              <JobTable rows={rows} sort={sort} onSort={onSort} mine={mine} />
-            </>
-          )}
+          <FilterBar
+            dimensions={[
+              { id: "plant", label: "Plants", value: plant, options: plants, onChange: setPlant },
+              {
+                id: "presence", label: "Sources", value: presence,
+                options: PRESENCE.map((p) => p.id),
+                labels: Object.fromEntries(PRESENCE.map((p) => [p.id, p.label])),
+                onChange: setPresence,
+              },
+            ]}
+            dirty={plant !== "All" || presence !== "all" || Boolean(search)}
+            onClear={() => { setPlant("All"); setPresence("all"); setSearch(""); }}
+            search={search}
+            onSearch={setSearch}
+            searchPlaceholder="Search job number or name…"
+          />
+          <JobTable rows={rows} sort={sort} onSort={onSort} mine={mine} />
         </>
       )}
     </div>
@@ -144,12 +130,12 @@ export default function ProjectsModule({ tab }) {
 /**
  * The one job table.
  *
- * Cost columns and schedule columns share it, and a job present in only one
- * source leaves the other side blank. That is the honest rendering: a dash says
+ * Cost columns and hours share it, and a job present in only one source leaves
+ * the other side blank. That is the honest rendering: a dash says
  * "this source doesn't mention it", a zero would say "it has none".
  */
 function JobTable({ rows, sort, onSort, mine }) {
-  const maxPieces = Math.max(...rows.map((r) => r.pieces), 1);
+  const maxHours = Math.max(...rows.map((r) => r.hours), 1);
 
   if (!rows.length) {
     return (
@@ -174,10 +160,8 @@ function JobTable({ rows, sort, onSort, mine }) {
             <SortableTh column="actCost" label="Actual Cost" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="marginPct" label="Margin" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="actualPerSf" label="Actual / SF" sort={sort} onSort={onSort} align="right" />
-            <SortableTh column="pieces" label="Pieces Scheduled" sort={sort} onSort={onSort} align="right" />
-            <SortableTh column="days" label="Pour Days" sort={sort} onSort={onSort} align="right" />
-            <SortableTh column="missingTickets" label="No Ticket" sort={sort} onSort={onSort} align="right" />
             <SortableTh column="hours" label="Hours Booked" sort={sort} onSort={onSort} align="right" />
+            <SortableTh column="people" label="People" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
@@ -194,7 +178,6 @@ function JobTable({ rows, sort, onSort, mine }) {
               </td>
               <td className="nowrap">
                 {r.costed && <Badge tone="blue" title="Has a cost report">cost</Badge>}
-                {r.scheduled && <Badge tone="green" title="Scheduled in the loaded export">sched</Badge>}
                 {r.timed && <Badge tone="amber" title="Timesheet hours booked to this job">time</Badge>}
               </td>
               <Cell on={r.costed}>{money(r.netContract)}</Cell>
@@ -208,19 +191,11 @@ function JobTable({ rows, sort, onSort, mine }) {
                 )}
               </Cell>
               <Cell on={r.costed}>{perSf(r.actualPerSf)}</Cell>
-              <Cell on={r.scheduled}>
-                {count(r.pieces)}
-                <MiniBar value={r.pieces} max={maxPieces} color="var(--series-3)" />
-              </Cell>
-              <Cell on={r.scheduled}>{r.days}</Cell>
-              <td className="num">
-                {r.missingTickets
-                  ? <Badge tone="red" title={`${r.unassigned} with no drafter assigned`}>{r.missingTickets}</Badge>
-                  : <span className="muted">—</span>}
-              </td>
               <Cell on={r.timed}>
-                <span title={`${r.people} ${r.people === 1 ? "person" : "people"}`}>{fmt(r.hours)}</span>
+                {fmt(r.hours)}
+                <MiniBar value={r.hours} max={maxHours} color="var(--series-3)" />
               </Cell>
+              <Cell on={r.timed}>{r.people}</Cell>
             </tr>
           ))}
         </tbody>

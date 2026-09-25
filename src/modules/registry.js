@@ -9,8 +9,6 @@
  */
 import Home from "./home/index.jsx";
 import Projects from "./projects/index.jsx";
-import ProductionModule from "./production/index.jsx";
-import Drawings from "./drawings/index.jsx";
 import CostModule from "./job-cost/index.jsx";
 import TimeModule from "./employee-time/index.jsx";
 import SourcesModule from "./sources/index.jsx";
@@ -20,8 +18,6 @@ import { SECTIONS as META, UTILITY as UTILITY_META, DEFAULT_SECTION } from "./se
 const COMPONENTS = {
   "home": Home,
   "projects": Projects,
-  "production": ProductionModule,
-  "drawings": Drawings,
   "cost": CostModule,
   "time": TimeModule,
   "sources": SourcesModule,
