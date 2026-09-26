@@ -87,6 +87,11 @@ misread.
 - **Portfolio** — contract, billing, cost and margin across every loaded plant;
   jobs bucketed by the margin they are forecast to finish at; the jobs under 10%;
   cost broken down by section and category; a per-plant table.
+- **Job Report** — pick any job and read its full cost report right in the Cost
+  section. Each section (D&E, Production, Field, Other) opens into categories
+  (Drafting, Engineering, Materials, Production Labor and so on), and each
+  category opens to its lines, with budget, forecast, actual, variance and
+  percent complete at every level. Clicking a job anywhere in Cost opens it here.
 - **Drafting & Eng** — the engineering view, in budget / cost / variance terms.
   The report carries two budgets — the original `Est Cost` and the current
   `Projections Total`, which differ on most lines — so both are shown, along with
@@ -98,8 +103,8 @@ misread.
 - **Cost Codes** — every cost code rolled up *across* jobs, with the codes running
   over projection flagged. The source system reports per job, so this view is the
   one thing it can't show you.
-- **Full cost report** — the whole report for one job: the contract header, every cost
-  line grouped as the report groups them, quantity progress, the lines running
+- **Full cost report** — the same report, also reachable from each job page: the
+  contract header, every cost line grouped by section and category, quantity progress, the lines running
   over, and every field the report carries including the blank ones. Each group
   of lines closes with a subtotal carrying the same completion percentage and bar
   as the lines above it.

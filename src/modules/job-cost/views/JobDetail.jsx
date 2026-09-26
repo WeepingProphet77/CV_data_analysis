@@ -1,17 +1,21 @@
 /**
  * One job, in full.
  *
- * Per CLAUDE.md §11 a detail view is exhaustive: every field the report carries
+ * Per CLAUDE.md §9 a detail view is exhaustive: every field the report carries
  * is listed whether or not it has a value, so "blank for this job" stays
- * distinct from "not in this report". The cost grid reproduces the report's own
- * layout — sections in the order it prints them, subtotals recomputed from the
- * lines rather than read, so the numbers on screen are the numbers being summed.
+ * distinct from "not in this report".
+ *
+ * The cost grid is read section → category → line (reportGroups.js): the
+ * report's own four sections, each split by category (D&E by discipline), each
+ * category expanding to its lines. Every total is recomputed from the lines
+ * under it rather than read from the sheet, so the numbers on screen are the
+ * numbers being summed, and every total row carries variance and % of Proj.
  */
 import React, { useMemo, useState } from "react";
 import { BackLink, Panel, Badge, StatCard, MiniBar } from "../../../components/ui.jsx";
 import { money, ratio, fmt, count, perSf, sqft } from "../../../core/format.js";
 import { JOB_FIELDS, COST_FIELDS } from "../schema.js";
-import { SECTIONS, SECTION_LABELS } from "../categories.js";
+import { groupReport } from "../reportGroups.js";
 import { StarButton } from "../../../components/MyProjects.jsx";
 
 const value = (job, f) => {
@@ -22,9 +26,6 @@ const value = (job, f) => {
   if (f.type === "number") return fmt(v, 0);
   return String(v);
 };
-
-/** Sum a measure over a set of cost lines. */
-const sum = (lines, k) => lines.reduce((t, c) => t + c[k], 0);
 
 /**
  * The "% of Proj" cell, used by detail lines, section subtotals and the job
@@ -46,8 +47,8 @@ function PctCell({ actCost, projCost }) {
 
 function CostRow({ c }) {
   return (
-    <tr>
-      <td className="muted nowrap">{c.code}</td>
+    <tr className="lineRow">
+      <td className="muted nowrap indent2">{c.code}</td>
       <td>{c.desc || <span className="muted">—</span>}</td>
       <td className="num muted">{c.estQty ? fmt(c.estQty, 0) : "—"}</td>
       <td className="num">{money(c.estCost)}</td>
@@ -61,21 +62,131 @@ function CostRow({ c }) {
   );
 }
 
-export default function JobDetail({ job, costs, quantities, mine, onBack }) {
+/** The money columns of a total row: every total carries variance and % (§13). */
+function TotalCells({ t }) {
+  return (
+    <>
+      <td className="num" />
+      <td className="num">{money(t.estCost)}</td>
+      <td className="num">{money(t.projCost)}</td>
+      <td className="num">{money(t.curMo)}</td>
+      <td className="num" />
+      <td className="num">{money(t.actCost)}</td>
+      <td className="num" style={{ color: t.variance < 0 ? "var(--critical)" : undefined }}>{money(t.variance)}</td>
+      <PctCell actCost={t.actCost} projCost={t.projCost} />
+    </>
+  );
+}
+
+/** A row that opens and closes what is under it. The whole row is the target. */
+function ToggleRow({ className, open, onToggle, label, detail, totals, indent }) {
+  return (
+    <tr className={`${className} clickable`} onClick={onToggle}>
+      <td className={`nowrap ${indent || ""}`}>
+        <button type="button" className="rowtoggle" aria-expanded={open}
+                onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+          {open ? "▾" : "▸"}
+        </button>
+      </td>
+      <td>
+        <span className="rowlabel">{label}</span>
+        {detail && <span className="muted rowdetail">{detail}</span>}
+      </td>
+      <TotalCells t={totals} />
+    </tr>
+  );
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The cost grid, section → category → line.
+ *
+ * Opens with every section showing its categories and every category closed:
+ * the job reads as a dozen subtotals first, and any one of them opens to the
+ * lines behind it. "Expand all" is there for reading it the way the report
+ * prints it.
+ */
+function ReportGrid({ report }) {
+  const sectionIds = report.sections.map((s) => s.section);
+  const groupKeys = report.sections.flatMap((s) => s.groups.map((g) => `${s.section}|${g.id}`));
+
+  const [openSections, setOpenSections] = useState(() => new Set(sectionIds));
+  const [openGroups, setOpenGroups] = useState(() => new Set());
+
+  const flip = (set, setter, id) => {
+    const next = new Set(set);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setter(next);
+  };
+  const expandAll = () => { setOpenSections(new Set(sectionIds)); setOpenGroups(new Set(groupKeys)); };
+  const collapseAll = () => { setOpenSections(new Set()); setOpenGroups(new Set()); };
+
+  return (
+    <>
+      <div className="gridcontrols">
+        <button type="button" className="btn ghost" onClick={expandAll}>Expand all lines</button>
+        <button type="button" className="btn ghost" onClick={collapseAll}>Collapse to sections</button>
+        <span className="hint">Click a section or category to open it.</span>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              {COST_FIELDS.map((f) => (
+                <th key={f.key} className={["estQty","estCost","projCost","curMo","actQty","actCost","variance","pctProj"].includes(f.key) ? "num" : ""}
+                    title={f.note || undefined}>
+                  {f.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          {report.sections.map((s) => {
+            const sOpen = openSections.has(s.section);
+            return (
+              <tbody key={s.section || "none"}>
+                <ToggleRow
+                  className="sectionrow" open={sOpen}
+                  onToggle={() => flip(openSections, setOpenSections, s.section)}
+                  label={s.label}
+                  detail={`${plural(s.groups.length, "category", "categories")} · ${plural(s.lineCount, "line", "lines")}`}
+                  totals={s.totals}
+                />
+                {sOpen && s.groups.map((g) => {
+                  const key = `${s.section}|${g.id}`;
+                  const gOpen = openGroups.has(key);
+                  return (
+                    <React.Fragment key={key}>
+                      <ToggleRow
+                        className="catrow" open={gOpen} indent="indent1"
+                        onToggle={() => flip(openGroups, setOpenGroups, key)}
+                        label={g.label}
+                        detail={plural(g.lines.length, "line", "lines")}
+                        totals={g.totals}
+                      />
+                      {gOpen && g.lines.map((c, i) => <CostRow key={`${c.code}-${i}`} c={c} />)}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            );
+          })}
+          <tfoot>
+            <tr>
+              <td /><td><strong>Job totals</strong></td>
+              <TotalCells t={report.totals} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </>
+  );
+}
+
+export default function JobDetail({ job, costs, quantities, mine, onBack, backLabel = "All jobs" }) {
   const [showEmpty, setShowEmpty] = useState(true);
 
-  const bySection = useMemo(() => {
-    const present = SECTIONS.filter((s) => costs.some((c) => c.section === s));
-    const extra = [...new Set(costs.map((c) => c.section))].filter((s) => !SECTIONS.includes(s));
-    return [...present, ...extra].map((s) => {
-      const lines = costs.filter((c) => c.section === s).sort((a, b) => a.code.localeCompare(b.code));
-      // Summed once here rather than per cell -- the subtotal row reads five
-      // measures plus a percentage off the same set.
-      const totals = {};
-      for (const k of ["estCost", "projCost", "curMo", "actCost", "variance"]) totals[k] = sum(lines, k);
-      return { section: s, label: SECTION_LABELS[s] || s || "Unsectioned", lines, totals };
-    });
-  }, [costs]);
+  const report = useMemo(() => groupReport(costs), [costs]);
 
   const t = job.totals;
   const overruns = useMemo(
@@ -86,7 +197,7 @@ export default function JobDetail({ job, costs, quantities, mine, onBack }) {
 
   return (
     <div>
-      <BackLink onClick={onBack}>All jobs</BackLink>
+      {onBack && <BackLink onClick={onBack}>{backLabel}</BackLink>}
 
       <div className="topbar" style={{ marginTop: 6 }}>
         <div>
@@ -141,6 +252,18 @@ export default function JobDetail({ job, costs, quantities, mine, onBack }) {
           at the bid area the budget rate was {perSf(job.perSf.asBid)}.
         </p>
       )}
+
+      <Panel title="Cost detail by section">
+        <ReportGrid key={job.key} report={report} />
+
+        {job.contingency && (
+          <p className="hint" style={{ marginTop: 10 }}>
+            <strong style={{ color: "var(--text-secondary)" }}>{job.contingency.code} {job.contingency.desc}:</strong>{" "}
+            {money(job.contingency.estCost)} estimated, {money(job.contingency.actCost)} actual. The report prints this
+            below the Job Totals row and excludes it from them, so it is excluded here too.
+          </p>
+        )}
+      </Panel>
 
       {job.sf.hasSf && job.sf.byProduct.length > 1 && (
         <Panel title="Square feet by product">
@@ -233,61 +356,6 @@ export default function JobDetail({ job, costs, quantities, mine, onBack }) {
           </div>
         </Panel>
       )}
-
-      <Panel title="Cost detail">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {COST_FIELDS.map((f) => (
-                  <th key={f.key} className={["estQty","estCost","projCost","curMo","actQty","actCost","variance","pctProj"].includes(f.key) ? "num" : ""}
-                      title={f.note || undefined}>
-                    {f.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            {bySection.map((s) => (
-              <tbody key={s.section || "none"}>
-                <tr className="grouprow"><td colSpan={COST_FIELDS.length}>{s.label}</td></tr>
-                {s.lines.map((c, i) => <CostRow key={`${c.code}-${i}`} c={c} />)}
-                <tr className="subtotalrow">
-                  <td />
-                  <td>{s.label} subtotal</td>
-                  <td className="num" />
-                  <td className="num">{money(s.totals.estCost)}</td>
-                  <td className="num">{money(s.totals.projCost)}</td>
-                  <td className="num">{money(s.totals.curMo)}</td>
-                  <td className="num" />
-                  <td className="num">{money(s.totals.actCost)}</td>
-                  <td className="num">{money(s.totals.variance)}</td>
-                  <PctCell actCost={s.totals.actCost} projCost={s.totals.projCost} />
-                </tr>
-              </tbody>
-            ))}
-            <tfoot>
-              <tr>
-                <td /><td><strong>Job totals</strong></td><td />
-                <td className="num">{money(t.estCost)}</td>
-                <td className="num">{money(t.projCost)}</td>
-                <td className="num">{money(t.curMo)}</td>
-                <td />
-                <td className="num">{money(t.actCost)}</td>
-                <td className="num">{money(t.variance)}</td>
-                <PctCell actCost={t.actCost} projCost={t.projCost} />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-
-        {job.contingency && (
-          <p className="hint" style={{ marginTop: 10 }}>
-            <strong style={{ color: "var(--text-secondary)" }}>{job.contingency.code} {job.contingency.desc}:</strong>{" "}
-            {money(job.contingency.estCost)} estimated, {money(job.contingency.actCost)} actual. The report prints this
-            below the Job Totals row and excludes it from them, so it is excluded here too.
-          </p>
-        )}
-      </Panel>
 
       <Panel
         title="Every field on this job"

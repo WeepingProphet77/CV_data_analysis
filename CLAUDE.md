@@ -258,6 +258,7 @@ src/
       plants.js                the known cost plants (filename rescue)
       squarefeet.js            job square footage and every $/SF rate
       engineering.js           the D&E roll-up: budget, hours, design progress
+      reportGroups.js          one job as section -> category -> line (Job Report)
       jobMetrics.js            deriveJob — the fields every view expects
       useJobCost.js            derived data + filter state
     employee-time/             timesheet analysis, routed at #/time (§12)
@@ -593,6 +594,8 @@ why `modules/sections.js` is plain ESM:
   never `0`**.
 - **The job gather** — each source found separately, and the timesheet join an
   equality match on the derived job number (`1000` must not match `100`).
+- **The Job Report route** keeps its job number and a plant name with spaces
+  intact.
 
 `test:storage` runs the real IndexedDB code path against `fake-indexeddb` and
 asserts that a dataset far larger than the localStorage cap saves and reloads
@@ -1104,7 +1107,8 @@ went with it on 2026-09-25 (§11); the timesheet joins on the same key (§12).
 | `Portfolio.jsx` | **Portfolio** | Stat tiles, margin-at-completion bands, jobs under 10% margin, cost by section and category, per-plant table. |
 | `CostCodes.jsx` | **Cost Codes** | Cross-job rollup by code. The analysis the source system can't give them, because its reports are per-job. |
 | `Engineering.jsx` | **Drafting & Engineering** | The role dashboard — see below. |
-| `JobDetail.jsx` | (job page) | The whole report for one job, reproduced. Now a tab of the job page: `#/job/<jobNo>/cost` (§15). |
+| `JobReport.jsx` | **Job Report** | Pick any costed job and read its full report without leaving Cost. `#/cost/report/<jobNo>/<plant>`; with no job it is the job list. Any job clicked elsewhere in Cost opens here. A job number costed at two plants gets a plant switch, never a sum. |
+| `JobDetail.jsx` | (Job Report, and the job page's Full Cost Report tab) | The whole report for one job. Its cost grid is grouped **section → category → line** by `reportGroups.js`, collapsible at each level, and sits directly under the headline figures. |
 
 The **Jobs** table left this section for `projects` (§15), where it is one row
 per job number with booked hours beside it. **Cost vs Schedule**
@@ -1113,6 +1117,29 @@ per job number with booked hours beside it. **Cost vs Schedule**
 `JobDetail` follows the exhaustive-detail rule (§9): every field is listed whether or not it has a
 value, subtotals are **recomputed from the lines on screen** rather than read
 from the sheet, and the "show fields that are empty" toggle defaults to **on**.
+
+### The Job Report grouping
+
+Added 2026-09-26 at the owner's request: the full report should be reachable
+from Cost and readable a section at a time. The report prints four sections and
+one subtotal each, which is too coarse (Production alone mixes materials and
+labor), so `reportGroups.js` splits each section one level further:
+
+- **D&E by discipline** (Drafting / Engineering / Checking / Outsourced), the
+  same `disciplineOf` the D&E tab uses. Outsourced lines are lump sums, not
+  hours (§13 below), which is the reason they must not sit mixed in with
+  in-house labor.
+- **Every other section by category**, from the code prefix in
+  `categories.js` (Materials / Production Labor, Delivery & Erection / Field
+  Labor, Hauling / Work Orders / Budget).
+
+The grid opens with every section showing its categories and every category
+folded, so a job reads as a dozen subtotals first; **Expand all lines** shows it
+the way the report prints it. Every section, category and job total row carries
+variance and % of Proj, recomputed from the lines under it. `test:jobcost`
+asserts, over every synthetic job and every real one when present, that each
+line lands in exactly one category, categories sum to their section, and
+sections sum to the report's own Job Totals.
 
 ### Conventions this module added
 
@@ -1280,7 +1307,8 @@ been looked at, and there is no browser automation
 here to check it (§7). The tables that grew most columns are Jobs, the plant
 table and the D&E project table; those are where crowding would show first.
 The 2026-09-25 retirement touched `JobDetail` (the "Scheduled in Production"
-button is gone) and has not been looked at either.
+button is gone), and the 2026-09-26 Job Report tab and grouped grid replaced
+its cost table. Neither has been looked at yet.
 
 Keep saying plainly which changes were and were not visually verified.
 
@@ -1403,7 +1431,7 @@ one vocabulary, and the job has a page.
 |---|---|---|
 | `#/` | **Home** | — |
 | `#/projects` | **Projects** | All Jobs |
-| `#/cost` | **Cost** | Portfolio · Cost Codes · Drafting & Engineering |
+| `#/cost` | **Cost** | Portfolio · Job Report · Cost Codes · Drafting & Engineering |
 | `#/time` | **Time** | Overview · People · Jobs · Cumulative |
 | `#/sources` | Sources | — (reached from the header chip and Home, not the nav) |
 | `#/job/<jobNo>` | Job page | Summary · Full Cost Report |
@@ -1428,8 +1456,8 @@ registry and can be driven by a fixture in the tests.
   keep tab state.
 - The error boundary is keyed on the **section**, not the route, so switching
   tab does not remount the view and throw away its scroll position.
-- **Routed drill-downs:** the job page, `#/time/person/<name>`,
-  `#/time/job/<name>`. A drill-down gets a route only when its record has a
+- **Routed drill-downs:** the job page, `#/cost/report/<jobNo>/<plant>`,
+  `#/time/person/<name>`, `#/time/job/<name>`. A drill-down gets a route only when its record has a
   stable key to put in the URL; don't invent one from an array index. (The
   retired piece and day panels were unrouted for exactly that reason.)
 

@@ -44,6 +44,8 @@ import JcEngineering from "../src/modules/job-cost/views/Engineering.jsx";
 import { SourceDrop } from "../src/modules/job-cost/views/SourceLibrary.jsx";
 import { StarButton, ScopeToggle, NoProjectsYet } from "../src/components/MyProjects.jsx";
 import { buildSource } from "../src/modules/job-cost/parse.js";
+import { groupReport } from "../src/modules/job-cost/reportGroups.js";
+import { money } from "../src/core/format.js";
 import { categoryOf } from "../src/modules/job-cost/categories.js";
 import { engineeringRollup, actIsHours } from "../src/modules/job-cost/engineering.js";
 import { deriveJob, quantitiesByJob } from "../src/modules/job-cost/jobMetrics.js";
@@ -74,6 +76,11 @@ const jcQtyForJob = quantitiesByJob(jcSources.flatMap((s) => s.quantities));
 const jcJobs = jcSources.flatMap((s) => s.jobs).map((j) => deriveJob(j, jcQtyForJob.get(j.key)));
 const jcCosts = jcSources.flatMap((s) => s.costs).map((c) => ({ ...c, category: categoryOf(c.code).label }));
 const jcQuantities = jcSources.flatMap((s) => s.quantities);
+const jcCostsByJob = new Map();
+for (const c of jcCosts) {
+  if (!jcCostsByJob.has(c.jobKey)) jcCostsByJob.set(c.jobKey, []);
+  jcCostsByJob.get(c.jobKey).push(c);
+}
 const jcQtyByJob = new Map();
 for (const q of jcSources.flatMap((s) => s.quantities)) {
   if (!jcQtyByJob.has(q.jobKey)) jcQtyByJob.set(q.jobKey, []);
@@ -117,7 +124,7 @@ const appLoaded = {
   ready: true,
   mine: jcMine,
   costLib: { sources: jcSources, ready: true, persistWarning: "", upsert: noop, remove: noop, clear: noop },
-  cost: { data: { ...jcData, costs: jcCosts, quantities: jcQuantities, costsByJob: new Map(), qtyByJob: jcQtyByJob, byJobKey: new Map(jcJobs.map((j) => [j.key, j])) } },
+  cost: { data: { ...jcData, costs: jcCosts, quantities: jcQuantities, costsByJob: jcCostsByJob, qtyByJob: jcQtyByJob, byJobKey: new Map(jcJobs.map((j) => [j.key, j])) } },
   time: { ...emptyDataset, rows, meta: { fileName: "time.csv", fileDate: "2026-08-31" } },
 };
 
@@ -218,6 +225,12 @@ const cases = [
   ["Cost section / codes", withApp(<CostModule tab="codes" />)],
   ["Cost section / engineering", withApp(<CostModule tab="engineering" />)],
   ["Cost section, nothing loaded", withApp(<CostModule tab="portfolio" />, appEmpty)],
+  ["Cost / Job Report list", withApp(<CostModule tab="report" route={{ rest: [] }} />)],
+  ["Cost / Job Report, one job", withApp(<CostModule tab="report" route={{ rest: [jcJobs[0].jobNo, jcJobs[0].plant] }} />)],
+  ["Cost / Job Report, job but no plant", withApp(<CostModule tab="report" route={{ rest: [jcJobs[0].jobNo] }} />)],
+  ["Cost / Job Report, unknown job", withApp(<CostModule tab="report" route={{ rest: ["00000"] }} />)],
+  ["Cost / Job Report, nothing loaded", withApp(<CostModule tab="report" route={{ rest: [] }} />, appEmpty)],
+  ["JC / JobDetail, no cost lines", <JcJobDetail job={jcJobs[0]} costs={[]} quantities={[]} onBack={noop} />],
   ["Time section", withApp(<TimeModule tab="overview" route={sourceRoute} />)],
   ["Time section / people", withApp(<TimeModule tab="people" route={sourceRoute} />)],
   ["Time section / jobs", withApp(<TimeModule tab="jobs" route={sourceRoute} />)],
@@ -299,30 +312,80 @@ if (paths < 2 || circles < 2) {
   console.log(`  ok   chart drew geometry        ${paths} paths, ${circles} end markers`);
 }
 
-// The job cost grid must reproduce the report's sections and subtotals.
+// The grouped cost grid: every section and every category gets its own row
+// with totals, and the lines stay folded away until one is opened -- the job
+// reads as a dozen subtotals first. Counts come from groupReport itself, so a
+// view that drops or invents a group fails here.
+const jcDetailCosts = jcCosts.filter((c) => c.jobKey === jcJobs[0].key);
 const jcDetail = renderToString(
-  <JcJobDetail job={jcJobs[0]} costs={jcCosts.filter((c) => c.jobKey === jcJobs[0].key)}
+  <JcJobDetail job={jcJobs[0]} costs={jcDetailCosts}
                quantities={jcQtyByJob.get(jcJobs[0].key) || []} onBack={noop} />
 );
-const groupRows = (jcDetail.match(/class="grouprow"/g) || []).length;
-const subtotals = (jcDetail.match(/class="subtotalrow"/g) || []).length;
-if (groupRows < 4 || groupRows !== subtotals) {
-  failures++;
-  console.log(`FAIL   job cost grid drew its sections (groups=${groupRows}, subtotals=${subtotals})`);
-} else {
-  console.log(`  ok   job cost grid drew its sections  ${groupRows} sections, ${subtotals} subtotals`);
+{
+  const want = groupReport(jcDetailCosts);
+  const wantGroups = want.sections.reduce((n, x) => n + x.groups.length, 0);
+  const sectionRows = (jcDetail.match(/class="sectionrow clickable"/g) || []).length;
+  const catRows = (jcDetail.match(/class="catrow clickable"/g) || []).length;
+  const lineRows = (jcDetail.match(/class="lineRow"/g) || []).length;
+  if (sectionRows !== want.sections.length || catRows !== wantGroups || sectionRows < 2) {
+    failures++;
+    console.log(`FAIL   grid drew every section and category (sections=${sectionRows}/${want.sections.length}, categories=${catRows}/${wantGroups})`);
+  } else {
+    console.log(`  ok   grid drew every section and category  ${sectionRows} sections, ${catRows} categories`);
+  }
+  if (lineRows !== 0) {
+    failures++;
+    console.log(`FAIL   lines start folded under their category (${lineRows} shown)`);
+  } else {
+    console.log("  ok   lines start folded under their category");
+  }
+  // Every total row -- section, category and job -- carries a completion bar
+  // wherever something is projected, not just the lines (§13).
+  const gridHtml = jcDetail.split("Cost detail by section")[1].split("</table>")[0];
+  const bars = (gridHtml.match(/class="minibar"/g) || []).length;
+  const wantBars = want.sections.filter((x) => x.totals.projCost > 0).length +
+    want.sections.flatMap((x) => x.groups).filter((g) => g.totals.projCost > 0).length +
+    (want.totals.projCost > 0 ? 1 : 0);
+  if (bars !== wantBars) {
+    failures++;
+    console.log(`FAIL   every total row carries a completion bar (bars=${bars}, want=${wantBars})`);
+  } else {
+    console.log(`  ok   every total row carries a completion bar  ${bars} bars`);
+  }
+  // The grid's own job total must be the report's, to the cent.
+  if (!jcDetail.includes(money(jcJobs[0].totals.actCost))) {
+    failures++;
+    console.log("FAIL   the grid's job total matches the report's Job Totals");
+  } else {
+    console.log("  ok   the grid's job total matches the report's Job Totals");
+  }
 }
 
-// Every section subtotal and the job total must now carry a completion bar,
-// not just the detail lines.
-const jcBars = (jcDetail.match(/class="minibar"/g) || []).length;
-const jcLines = (jcDetail.match(/class="subtotalrow"/g) || []).length;
-const jcDetailLines = jcCosts.filter((c) => c.jobKey === jcJobs[0].key).filter((c) => c.projCost > 0).length;
-if (jcBars < jcDetailLines + jcLines + 1) {
-  failures++;
-  console.log(`FAIL   subtotals carry completion bars (bars=${jcBars}, lines=${jcDetailLines}, subtotals=${jcLines})`);
-} else {
-  console.log(`  ok   subtotals carry completion bars  ${jcBars} bars over ${jcLines} subtotals + total`);
+// The Job Report tab: a list with no job, the full report with one, and a
+// plain explanation for a job number no loaded report carries.
+{
+  const list = renderToString(withApp(<CostModule tab="report" route={{ rest: [] }} />, { ...appLoaded, mine: jcMineEmpty }));
+  const listRows = (list.match(/<tr class="clickable"/g) || []).length;
+  if (listRows !== jcJobs.length) {
+    failures++;
+    console.log(`FAIL   the Job Report list offers every job (${listRows} of ${jcJobs.length})`);
+  } else {
+    console.log(`  ok   the Job Report list offers every job  ${listRows} jobs`);
+  }
+  const one = renderToString(withApp(<CostModule tab="report" route={{ rest: [jcJobs[0].jobNo, jcJobs[0].plant] }} />));
+  if (!/class="sectionrow clickable"/.test(one) || !one.includes(jcJobs[0].jobTitle)) {
+    failures++;
+    console.log("FAIL   an addressed job opens its full report");
+  } else {
+    console.log("  ok   an addressed job opens its full report");
+  }
+  const none = renderToString(withApp(<CostModule tab="report" route={{ rest: ["00000"] }} />));
+  if (!/No loaded cost report carries job/.test(none)) {
+    failures++;
+    console.log("FAIL   an unknown job says so");
+  } else {
+    console.log("  ok   an unknown job says so");
+  }
 }
 
 // My Projects must actually isolate the data, not just re-label it. The scope

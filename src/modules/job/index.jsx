@@ -256,6 +256,7 @@ function FullCostReport({ app, job }) {
           quantities={app.cost.data.qtyByJob.get(rec.key) || []}
           mine={app.mine}
           onBack={() => go("job", job.jobNo)}
+          backLabel="Job summary"
         />
       ))}
     </>

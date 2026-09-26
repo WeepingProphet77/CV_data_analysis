@@ -396,6 +396,29 @@ tr.clickable:hover { background: rgba(0, 220, 255, 0.10); box-shadow: inset 2px 
   background: var(--surface-3);
 }
 
+/* The grouped cost grid: section, then category, then line. Sections carry the
+   banner look the report's own section headers had; categories sit one step
+   in; lines one step further. */
+.jc tr.sectionrow td {
+  padding: 9px 8px; border-top: 1px solid var(--border-strong);
+  font-weight: 700; color: var(--text-primary); background: var(--surface-3);
+}
+.jc tr.sectionrow .rowlabel {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--accent-dim);
+}
+.jc tr.catrow td { font-weight: 600; color: var(--text-primary); background: rgba(255, 255, 255, 0.02); }
+.jc tr.catrow td:nth-child(2) { padding-left: 18px; }
+.jc tr.lineRow td:nth-child(2) { padding-left: 34px; }
+.jc td.indent1 { padding-left: 18px; }
+.jc td.indent2 { padding-left: 34px; }
+.rowdetail { margin-left: 8px; font-size: 10px; font-weight: 400; }
+.rowtoggle {
+  background: none; border: 0; padding: 0 4px; cursor: pointer;
+  color: var(--accent-dim); font: inherit; font-size: 11px;
+}
+.rowtoggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
+.gridcontrols { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+
 /* The exhaustive field list on a job. */
 .fieldlist {
   display: grid; grid-template-columns: minmax(140px, max-content) 1fr;
