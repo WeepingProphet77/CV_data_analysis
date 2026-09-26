@@ -35,10 +35,11 @@ export const SECTIONS = [
   {
     id: "cost",
     label: "Cost",
-    blurb: "Weekly job cost by plant — margin, cost codes and the drafting & engineering roll-up.",
+    blurb: "Weekly job cost by plant — margin, each job's full report, cost codes and the drafting & engineering roll-up.",
     needs: ["cost"],
     tabs: [
       { id: "portfolio", label: "Portfolio" },
+      { id: "report", label: "Job Report" },
       { id: "codes", label: "Cost Codes" },
       { id: "engineering", label: "Drafting & Engineering" },
     ],

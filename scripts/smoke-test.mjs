@@ -128,6 +128,11 @@ eq("the retired sections are gone", [isSection("production"), isSection("drawing
 eq("a production bookmark goes home", ALIASES.production, "home");
 eq("a drawings bookmark goes home", ALIASES.drawings, "home");
 eq("the cost-vs-schedule tab is gone", tabsFor("projects").map((t) => t.id), ["jobs"]);
+// The Job Report is addressed by job number, then plant: a job costed at two
+// plants is two reports, and the plant has spaces that must survive encoding.
+eq("a job report route keeps its job and plant",
+   parseRoute(hrefFor("cost", "report", "43134", "Ashland City"), R), { section: "cost", params: [], tab: "report", rest: ["43134", "Ashland City"] });
+eq("a bare job report route is the list", parseRoute("#/cost/report", R).rest, []);
 
 console.log("\nProject roll-up");
 const pjCost = [

@@ -23,6 +23,7 @@ import {
 } from "../src/modules/job-cost/engineering.js";
 import { money, moneyCompact, ratio } from "../src/core/format.js";
 import { splitJob } from "../src/modules/employee-time/schema.js";
+import { groupReport, groupOf, totalsOf, MEASURES } from "../src/modules/job-cost/reportGroups.js";
 import { sampleWorkbooks } from "./job-cost-sample.mjs";
 
 let failures = 0;
@@ -410,6 +411,79 @@ function reconcile(label, sheets, plant, fileName) {
 console.log("\nReconciliation — synthetic");
 for (const wb of sampleWorkbooks()) reconcile(wb.plant, wb.sheets, wb.plant, wb.fileName);
 
+/*
+ * The Job Report's section -> category -> line grouping (reportGroups.js).
+ * Its whole promise is that dissecting a job loses and invents nothing: every
+ * line in exactly one category, categories summing to their section, sections
+ * summing to the job. Run over every job, synthetic always and real when present.
+ */
+function checkGrouping(label, jobs, costs) {
+  const byJob = new Map();
+  for (const c of costs) {
+    if (!byJob.has(c.jobKey)) byJob.set(c.jobKey, []);
+    byJob.get(c.jobKey).push(c);
+  }
+  let lost = 0, groupDrift = 0, sectionDrift = 0, badPct = 0, lines = 0;
+  for (const j of jobs) {
+    const mine = byJob.get(j.key) || [];
+    lines += mine.length;
+    const r = groupReport(mine);
+    const placed = r.sections.flatMap((s) => s.groups.flatMap((g) => g.lines));
+    if (placed.length !== mine.length || new Set(placed).size !== mine.length) lost++;
+    for (const s of r.sections) {
+      for (const k of MEASURES) {
+        if (!near(s.groups.reduce((a, g) => a + g.totals[k], 0), s.totals[k])) groupDrift++;
+      }
+      for (const g of s.groups) {
+        if (g.totals.pctProj != null && !Number.isFinite(g.totals.pctProj)) badPct++;
+      }
+    }
+    for (const k of MEASURES) {
+      if (!near(r.sections.reduce((a, s) => a + s.totals[k], 0), r.totals[k])) sectionDrift++;
+    }
+    // The grouped grid prints its own job total; it must be the report's.
+    if (j.hasJobTotals && !near(r.totals.actCost, j.totals.actCost)) sectionDrift++;
+  }
+  ok(`${label}: every line lands in exactly one category (${lines} lines, ${jobs.length} jobs)`, lost === 0, `${lost} jobs`);
+  ok(`${label}: categories sum to their section`, groupDrift === 0, `${groupDrift} mismatches`);
+  ok(`${label}: sections sum to the job, and to the report's Job Totals`, sectionDrift === 0, `${sectionDrift} mismatches`);
+  ok(`${label}: no category completion is NaN or infinite`, badPct === 0);
+}
+
+console.log("\nJob Report grouping — synthetic");
+{
+  const srcs = sampleWorkbooks().map((wb) => buildSource(wb.sheets, { plant: wb.plant, fileName: wb.fileName }));
+  checkGrouping("sample", srcs.flatMap((x) => x.jobs), srcs.flatMap((x) => x.costs));
+
+  // D&E splits by discipline; every other section by its code-prefix category.
+  eq("D&E drafting line", groupOf({ section: "D&E", code: "60.100" }).label, "Drafting");
+  eq("D&E outsourced line", groupOf({ section: "D&E", code: "60.710" }).label, "Outsourced");
+  eq("Production materials line", groupOf({ section: "PRODUCTION", code: "20.600" }).label, "Materials");
+  eq("Production labor line", groupOf({ section: "PRODUCTION", code: "30.060" }).label, "Production Labor");
+
+  const r = groupReport([
+    { section: "D&E", code: "60.710", estCost: 5, projCost: 5, curMo: 0, actCost: 1, variance: 4 },
+    { section: "D&E", code: "60.100", estCost: 2, projCost: 4, curMo: 1, actCost: 3, variance: 1 },
+    { section: "OTHER", code: "70.000A", estCost: 0, projCost: 0, curMo: 0, actCost: 2, variance: -2 },
+    { section: "PRODUCTION", code: "30.060", estCost: 1, projCost: 1, curMo: 0, actCost: 0, variance: 1 },
+    { section: "PRODUCTION", code: "20.100", estCost: 1, projCost: 1, curMo: 0, actCost: 0, variance: 1 },
+    { section: "NEWSECTION", code: "99.000", estCost: 1, projCost: 1, curMo: 0, actCost: 0, variance: 1 },
+  ]);
+  eq("sections in the order the report prints them, unknown kept last",
+     r.sections.map((x) => x.section), ["D&E", "PRODUCTION", "OTHER", "NEWSECTION"]);
+  eq("D&E disciplines in discipline order, not code order",
+     r.sections[0].groups.map((g) => g.label), ["Drafting", "Outsourced"]);
+  eq("other categories in the order their codes run",
+     r.sections[1].groups.map((g) => g.label), ["Materials", "Production Labor"]);
+  // Nothing projected means completion is unknown, never 0% and never Infinity.
+  eq("a category with nothing projected has no completion", r.sections[2].groups[0].totals.pctProj, null);
+  eq("completion is a ratio of sums, not an average of ratios",
+     r.sections[0].totals.pctProj, (1 + 3) / (5 + 4));
+  eq("an empty job groups to nothing", groupReport([]).sections.length, 0);
+  eq("an empty job totals to zero, with unknown completion",
+     [totalsOf([]).actCost, totalsOf([]).pctProj], [0, null]);
+}
+
 /* -- The real reports, when they are present ----------------------------- */
 
 const REAL_DIR = "weekly job costs";
@@ -526,6 +600,8 @@ if (existsSync(REAL_DIR)) {
                 `forecast $${(sfSum((j) => j.totals.projCost) / sfTotal).toFixed(2)}, ` +
                 `actual $${(sfSum((j) => j.totals.actCost) / sfTotal).toFixed(2)}`);
   }
+  console.log("\nJob Report grouping — real reports");
+  checkGrouping("real", realJobs, realCosts);
   console.log(`  --  ${totalJobs} real jobs checked across ${files.length} workbook(s)`);
 } else {
   console.log(`\n  --  "${REAL_DIR}/" not present; real-report checks skipped`);

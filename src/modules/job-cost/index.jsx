@@ -31,11 +31,19 @@ import { SourceDrop } from "./views/SourceLibrary.jsx";
 import Portfolio from "./views/Portfolio.jsx";
 import CostCodes from "./views/CostCodes.jsx";
 import Engineering from "./views/Engineering.jsx";
+import JobReport from "./views/JobReport.jsx";
 
-/** Cost views address a job by its plant-scoped key; the app addresses it by number. */
-const openJob = (key) => go("job", String(key).split("|")[1] || key);
+/**
+ * Cost views address a job by its plant-scoped key ("plant|jobNo"). A job
+ * clicked anywhere in Cost opens its full report on the Job Report tab, with
+ * the plant carried along so a job costed at two plants opens the right one.
+ */
+const openJob = (key) => {
+  const [plant, jobNo] = String(key).includes("|") ? String(key).split("|") : ["", String(key)];
+  go("cost", "report", jobNo, plant);
+};
 
-export default function CostModule({ tab }) {
+export default function CostModule({ tab, route }) {
   const app = useAppData();
   const mine = app.mine;
   const data = app.cost.data;
@@ -47,6 +55,9 @@ export default function CostModule({ tab }) {
   );
 
   if (!app.costLib.sources.length) return <SourceDrop onSource={app.costLib.upsert} />;
+
+  // #/cost/report/<jobNo>/<plant>: the segments after the tab name the job.
+  const [reportJobNo = "", reportPlant = ""] = tab === "report" ? route?.rest ?? [] : [];
 
   const loadedJobNos = new Set(data.jobs.map((j) => j.jobNo));
   const missingFromLibrary = mine.active
@@ -113,10 +124,13 @@ export default function CostModule({ tab }) {
 
       <RouteTabs section="cost" tabs={tabsFor("cost")} active={tab} />
 
-      <FilterBar
+      {/* An open job report has its own job picker; the filters narrow lists,
+          and there is no list on screen while one job is open. */}
+      {!(tab === "report" && reportJobNo) && <FilterBar
         dimensions={[
           { id: "plant", label: "Plants", value: f.plant, options: f.plants, onChange: f.setPlant },
-          { id: "job", label: "Jobs", value: f.job, options: f.jobOptions, onChange: f.setJob },
+          // The Job Report list is itself the job picker.
+          ...(tab === "report" ? [] : [{ id: "job", label: "Jobs", value: f.job, options: f.jobOptions, onChange: f.setJob }]),
           // Category slices cost lines, so it only means anything where cost
           // lines are what is on screen.
           ...(tab === "codes" || tab === "portfolio"
@@ -128,7 +142,7 @@ export default function CostModule({ tab }) {
         search={f.search}
         onSearch={f.setSearch}
         searchPlaceholder={tab === "codes" ? "Search codes and descriptions…" : "Search job number or name…"}
-      />
+      />}
 
       {mine.scope !== SCOPE_ALL && !mine.count ? (
         <NoProjectsYet onShowAll={() => mine.setScope(SCOPE_ALL)} />
@@ -153,6 +167,9 @@ export default function CostModule({ tab }) {
               onOpenJob={openJob}
               onScopeToMine={() => mine.setScope(SCOPE_MINE)}
             />
+          )}
+          {tab === "report" && (
+            <JobReport data={data} jobs={f.jobs} jobNo={reportJobNo} plant={reportPlant} mine={mine} />
           )}
           {tab === "codes" && (
             <CostCodes costs={f.codeCosts} jobs={f.pool} search={f.search} onOpenJob={openJob} />
